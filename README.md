@@ -1,62 +1,37 @@
-# VARJURIIK ONLINE v2
+# VARJURIIK v4 — multiplayer mafia/economy game
 
-Täis-stack multiplayer MVP:
-- konto loomine + sisselogimine
-- serveripoolne raha/käikude/score'i loogika
-- mängijate edetabel + online staatus
-- mängijate omavaheline röövimine
-- röövid, jõusaal, mafioosod, relvad, kinnisvara, pank
-- owner/admin paneel
-- VIP, ban, raha/käigud/level, admini õigused
-- globaalne teade + röövide 1x–10x event
-- live Texas Hold'em 2–6 mängijat, ainult mängurahaga
-- telefonisõbralik UI
-- andmed salvestatakse serveri data/db.json faili
+VARJURIIK v4 is the new beta base for the game. It is intended for deployment on Render with PostgreSQL persistence.
 
-## Kohalik käivitus
+## Included now
 
-Vaja Node.js 20+.
+- Accounts, hashed passwords, session invalidation and owner/admin roles
+- Login rate limiting, temporary account lock, IP + user-agent login/security logs
+- Optional e-mail password reset through SMTP plus admin temporary-password reset
+- Persistent PostgreSQL game state when `DATABASE_URL` is configured
+- Turns: configurable batch/interval, natural cap, admin-added turns may exceed cap
+- Mafia/security to level 300, property to level 100, education and bank limits
+- Weapons, troops, PvP limits, gang points, unprotected excess weapons
+- Player banks, configurable loans and automatic default liquidation
+- Businesses, car dealership/market, travel, maintenance costs
+- Dynamic weapon/car market multipliers and admin market controls
+- Crypto, lottery, global chat and play-money live Hold'em beta
+- Wanted level, jail/bail, reputation and insurance
+- Secret operations and player bounties
+- Player profile privacy controls and expanded statistics
+- Admin turn shop: custom package name, turns, price, payment method, free-text payment instructions, manual approve/reject
+- Admin gifts to all active users (cash/turns/VIP days + message)
+- Admin audit log, snapshots, owner-only rollback and economy simulation
+- Admin security view for shared IP risk signals and password reset requests
+- Owner/admin-only game-master handbook
 
-1. Kopeeri `.env.example` väärtused hostingu Environment Variables sektsiooni.
-2. Käivita:
-   npm install
-   npm start
-3. Ava http://localhost:3000
+## Important deployment variables
 
-Node ise ei loe `.env` faili automaatselt; lokaalselt sea keskkonnamuutujad terminalis
-või lisa soovi korral dotenv. Hostingus kasuta nende "Variables / Environment" menüüd.
+Copy `.env.example` values into Render environment variables. For persistent accounts/progress, configure `DATABASE_URL` from Render Postgres. Set a strong `OWNER_PASSWORD` and `TOKEN_SECRET`.
 
-## Owner konto
+For e-mail password reset, also set `PUBLIC_URL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and optionally `SMTP_FROM`. If SMTP is not configured, a reset request still appears to admins and an admin can assign a temporary password.
 
-Server loob owner konto AINULT siis, kui OWNER_PASSWORD on serveri käivitamisel määratud.
+## Notes
 
-Näide:
-OWNER_USERNAME=Erki
-OWNER_PASSWORD=siia-väga-pikk-parool
-TOKEN_SECRET=veel-pikem-juhuslik-saladus
+This is a large working beta, not a finished audited production platform. The current storage model keeps the whole game state in one PostgreSQL JSONB row, which is fine for early testing but should later be migrated to relational tables for larger player counts. Login throttling is in-memory, so for multiple web instances a shared Redis-style limiter would be better. Poker still does not implement full side-pot/reconnect handling.
 
-ÄRA pane päris paroole GitHubi ega faili public/.
-
-## Andmete säilitamine
-
-Vaikimisi: DATA_DIR=./data
-
-Kui hosting kasutab ephemeral filesystem'i, tuleb kasutada persistent volume/disk'i
-ja seada DATA_DIR selle mount path'i alla, näiteks:
-DATA_DIR=/data
-
-## Oluline pokkeri kohta
-
-Pokker kasutab AINULT mängusisest fiktiivset raha. Rakenduses pole pärisraha sissemakseid,
-väljamakseid ega mängusisese raha rahaks vahetamist.
-
-## Enne suurele publikule avamist
-
-See on töötav MVP, mitte veel production-hardening:
-- vii andmed Postgresesse;
-- lisa rate limiting ja CSRF/CSP/Helmet;
-- lisa e-posti taastamine / 2FA;
-- lisa audit-log adminile;
-- lisa pokkerile side-potid ja reconnect/resume;
-- tee automaattestid;
-- kasuta HTTPS-i (hostingud annavad selle tavaliselt ise).
+Before public launch, run a dedicated security review, enable Render HTTPS, configure database backups, and test restores/rollback with a staging database.

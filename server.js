@@ -1,406 +1,192 @@
-
 'use strict';
+const express=require('express');
+const http=require('http');
+const crypto=require('crypto');
+const fs=require('fs');
+const path=require('path');
+const {Server}=require('socket.io');
+const {Pool}=require('pg');
+const nodemailer=require('nodemailer');
 
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
+const PORT=Number(process.env.PORT||3000);
+const OWNER_USERNAME=process.env.OWNER_USERNAME||'Erki';
+const OWNER_PASSWORD=process.env.OWNER_PASSWORD||'';
+const TOKEN_SECRET=process.env.TOKEN_SECRET||crypto.randomBytes(32).toString('hex');
+const DATABASE_URL=process.env.DATABASE_URL||'';
+const DATA_DIR=path.resolve(process.env.DATA_DIR||'./data');
+const SMTP_HOST=process.env.SMTP_HOST||'';
+const SMTP_PORT=Number(process.env.SMTP_PORT||587);
+const SMTP_USER=process.env.SMTP_USER||'';
+const SMTP_PASS=process.env.SMTP_PASS||'';
+const SMTP_FROM=process.env.SMTP_FROM||'';
+const PUBLIC_URL=process.env.PUBLIC_URL||'';
+fs.mkdirSync(DATA_DIR,{recursive:true});
+const DB_FILE=path.join(DATA_DIR,'db.json');
 
-const PORT = Number(process.env.PORT || 3000);
-const DATA_DIR = path.resolve(process.env.DATA_DIR || './data');
-const DB_FILE = path.join(DATA_DIR, 'db.json');
-const OWNER_USERNAME = process.env.OWNER_USERNAME || 'Erki';
-const OWNER_PASSWORD = process.env.OWNER_PASSWORD || '';
-const TOKEN_SECRET = process.env.TOKEN_SECRET || crypto.randomBytes(32).toString('hex');
+const LEVEL_PRICES={
+2:16000,3:22000,4:38000,5:68000,6:116000,7:224000,8:380000,9:522000,10:600000,11:1460000,12:1770000,13:2400000,14:3100000,15:4960000,16:6600000,17:9800000,18:11000000,19:12000000,20:13200000,21:13800000,22:17600000,23:19200000,24:21000000,25:22000000,26:23600000,27:26000000,28:27400000,29:29600000,30:36000000,31:42000000,32:50000000,33:58000000,34:68000000,35:78000000,36:90000000,37:96000000,38:104000000,39:114000000,40:122000000,41:132000000,42:144000000,43:160000000,44:170000000,45:178000000,46:188000000,47:198000000,48:208000000,49:220000000,50:240000000,51:290000000,52:320000000,53:460000000,54:550000000,55:610000000,56:718000000,57:780000000,58:842000000,59:900000000,60:1000000000,61:1100000000,62:1220000000,63:1320000000,64:1380000000,65:1460000000,66:1580000000,67:1700000000,68:1980000000,69:2200000000,70:4000000000,71:6000000000,72:8000000000,73:10000000000,74:12000000000,75:14000000000,76:16000000000,77:18000000000,78:20000000000,79:22000000000,80:24000000000,81:26000000000,82:28000000000,83:30000000000,84:32000000000,85:34000000000,86:36000000000,87:38000000000,88:40000000000,89:42000000000,90:44000000000,91:46000000000,92:48000000000,93:50000000000,94:52000000000,95:54000000000,96:56000000000,97:58000000000,98:60000000000,99:62000000000,100:64000000000,101:68000000000,102:72000000000,103:76000000000,104:80000000000,105:84000000000,106:88000000000,107:92000000000,108:96000000000,109:100000000000,110:104000000000,111:108000000000,112:112000000000,113:116000000000,114:120000000000,115:124000000000,116:128000000000,117:132000000000,118:136000000000,119:140000000000,120:144000000000,121:148000000000,122:152000000000,123:156000000000,124:160000000000,125:250000000000};
+for(let l=126;l<=300;l++){const t=(l-125)/175;LEVEL_PRICES[l]=Math.round((250e9*Math.pow(100,t))/1e6)*1e6;}
+const PROPERTY_PRICES=Array.from({length:101},(_,i)=>i===0?0:Math.round((50000*Math.pow(1e12/50000,(i-1)/99))/1000)*1000);
+const CITIES=[['Paide','Ehitus +8%'],['Tallinn','Autopood +10%'],['Tartu','Haridus -10% käike'],['Pärnu','Turism +10%'],['Rakvere','Põllumajandus +8%'],['Viljandi','Põllumajandus +10%'],['Võru','Ehitus +6%'],['Haapsalu','Turism +8%'],['Narva','Kaubandus +8%'],['Kuressaare','Turism +15%'],['Jõgeva','Põllumajandus +6%'],['Valga','Logistika +8%']];
+const WEAPONS=[
+{name:'Rusikad',price:0,atk:0,def:0,score:0},{name:'Nuga',price:25000,atk:18,def:4,score:20000},{name:'Püstol',price:180000,atk:70,def:20,score:150000},{name:'SMG',price:950000,atk:260,def:65,score:800000},{name:'Ründerelv',price:4200000,atk:850,def:180,score:3500000},{name:'Täpsuspüss',price:19000000,atk:2500,def:420,score:15000000},{name:'Raskekuulipilduja',price:90000000,atk:8500,def:1800,score:70000000},{name:'Sõjaväe arsenal',price:650000000,atk:45000,def:15000,score:500000000}];
+const CRIMES=[
+{id:'shop',name:'Väikepood',turns:30,min:9000,max:30000,risk:.08,need:1},{id:'car',name:'Autovargus',turns:30,min:50000,max:180000,risk:.14,need:3},{id:'warehouse',name:'Ladu',turns:30,min:250000,max:900000,risk:.22,need:8},{id:'bank',name:'Pangarööv',turns:30,min:2200000,max:9000000,risk:.32,need:18},{id:'casino',name:'Kasiino',turns:30,min:16000000,max:65000000,risk:.42,need:35},{id:'armored',name:'Soomusauto',turns:30,min:85000000,max:300000000,risk:.50,need:60},{id:'state',name:'Riiklik varakamber',turns:30,min:600000000,max:2500000000,risk:.58,need:100}];
+const EDU=[
+{name:'Puudub',cost:0,turns:0,bank:1e6},{name:'Põhiharidus',cost:150000,turns:50,bank:5e6},{name:'Keskharidus',cost:900000,turns:50,bank:25e6},{name:'Kutseharidus',cost:4500000,turns:50,bank:100e6},{name:'Bakalaureus',cost:25000000,turns:50,bank:500e6},{name:'Magister',cost:140000000,turns:50,bank:3e9},{name:'Doktor',cost:900000000,turns:50,bank:20e9},{name:'Finantsakadeemia',cost:6000000000,turns:50,bank:150e9},{name:'Eliitakadeemia',cost:50000000000,turns:50,bank:1e12}];
+const BIZ=[{id:'farm',name:'Põllumajandus',base:250000,income:18000,city:'Rakvere'},{id:'construction',name:'Ehitusfirma',base:600000,income:42000,city:'Paide'},{id:'restaurant',name:'Restoran',base:1000000,income:65000,city:'Pärnu'},{id:'logistics',name:'Logistikafirma',base:2500000,income:130000,city:'Valga'},{id:'security',name:'Turvafirma',base:7000000,income:310000,city:'Tallinn'}];
+const CAR_LICENSES=[{level:1,name:'Tavaautod',cost:500000,min:80000,max:450000},{level:2,name:'Premium',cost:6000000,min:700000,max:3500000},{level:3,name:'Sport',cost:45000000,min:5000000,max:22000000},{level:4,name:'Superautod',cost:450000000,min:50000000,max:240000000}];
 
-fs.mkdirSync(DATA_DIR, { recursive: true });
+function defaults(){return{users:{},settings:{heistMultiplier:1,turnBatch:50,turnMinutes:15,maxNaturalTurns:3000,pvpWindowMin:15,pvpMaxHits:6,cryptoMin:88,cryptoMax:197,cryptoPrice:120,cryptoNext:Date.now()+900000,marketFee:.03,maintenanceRate:.002,announcement:'',weaponMarket:1,carMarket:1,marketNext:Date.now()+900000,marketPressure:0,lottery:{active:false,title:'',ticketPrice:10000,maxTickets:20,prize:1000000,drawAt:0,tickets:{},winner:null}},chat:[],gangs:{},playerBanks:{},loans:{},carListings:{},logs:[],securityLogs:[],auditLogs:[],resetRequests:{},passwordResetTokens:{},bounties:{},turnShop:{},turnOrders:{},snapshots:[],gifts:[],nextIds:{loan:1,listing:1,bounty:1,turnPack:1,turnOrder:1,snapshot:1,gift:1}}}
+let db=defaults(),pool=null,saveTimer=null;
+function normalize(){const d=defaults();for(const k of Object.keys(d))if(db[k]===undefined)db[k]=d[k];db.nextIds={...d.nextIds,...(db.nextIds||{})};db.settings={...d.settings,...db.settings};db.settings.lottery={...d.settings.lottery,...(db.settings.lottery||{})};for(const u of Object.values(db.users)){Object.assign(u,{email:'',education:0,securityLevel:1,mafiaLevel:1,propertyLevel:0,mafia:0,guards:0,weapons:{},crypto:0,city:'Paide',businesses:{},carLicense:0,cars:[],gangId:null,pvpHits:{},maintenanceDue:Date.now()+86400000,sessionVersion:1,lastIp:'',lastUserAgent:'',lastLoginAt:0,failedLogins:0,lockedUntil:0,wanted:0,jailedUntil:0,rep:0,insurance:{active:false,until:0,coverage:.3},privacy:{cash:false,bank:false,levels:true,stats:true,lastActive:false},lastActive:Date.now(),vipUntil:0},u);u.stats={wins:0,losses:0,robbed:0,pokerWins:0,crimes:0,operations:0,...(u.stats||{})}}}
+async function initStorage(){if(DATABASE_URL){pool=new Pool({connectionString:DATABASE_URL,ssl:DATABASE_URL.includes('localhost')?false:{rejectUnauthorized:false}});await pool.query('CREATE TABLE IF NOT EXISTS game_state(id INT PRIMARY KEY,data JSONB NOT NULL,updated_at TIMESTAMPTZ DEFAULT NOW())');const r=await pool.query('SELECT data FROM game_state WHERE id=1');if(r.rows[0])db=r.rows[0].data;else await pool.query('INSERT INTO game_state(id,data) VALUES(1,$1)',[db]);console.log('PostgreSQL persistence ON')}else if(fs.existsSync(DB_FILE)){try{db=JSON.parse(fs.readFileSync(DB_FILE,'utf8'))}catch{}}normalize()}
+async function saveNow(){if(pool)await pool.query('INSERT INTO game_state(id,data,updated_at) VALUES(1,$1,NOW()) ON CONFLICT(id) DO UPDATE SET data=$1,updated_at=NOW()',[db]);else fs.writeFileSync(DB_FILE,JSON.stringify(db,null,2))}
+function saveSoon(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>saveNow().catch(console.error),100)}
 
-const defaultDb = () => ({
-  users: {},
-  settings: { heistMultiplier: 1, announcement: '' },
-  logs: [],
-  createdAt: Date.now()
-});
+const norm=x=>String(x||'').trim().replace(/\s+/g,' ').slice(0,18),key=x=>norm(x).toLowerCase(),rand=(a,b)=>Math.floor(Math.random()*(b-a+1))+a,clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+function hpw(p,s=crypto.randomBytes(16).toString('hex')){return{salt:s,hash:crypto.scryptSync(String(p),s,64).toString('hex')}}
+function checkPw(p,s,h){try{return crypto.timingSafeEqual(crypto.scryptSync(String(p),s,64),Buffer.from(h,'hex'))}catch{return false}}
+function token(name){const u=db.users[key(name)],p=Buffer.from(JSON.stringify({u:name,v:u?.sessionVersion||1,exp:Date.now()+2592e6})).toString('base64url');return p+'.'+crypto.createHmac('sha256',TOKEN_SECRET).update(p).digest('base64url')}
+function untoken(t){try{const[p,sig]=String(t||'').split('.'),a=crypto.createHmac('sha256',TOKEN_SECRET).update(p).digest(),b=Buffer.from(sig,'base64url');if(a.length!==b.length||!crypto.timingSafeEqual(a,b))return null;const d=JSON.parse(Buffer.from(p,'base64url'));if(d.exp<=Date.now())return null;const u=db.users[key(d.u)];return u&&(u.sessionVersion||1)===(d.v||1)?d.u:null}catch{return null}}
+function clientIp(req){return String(req.headers['x-forwarded-for']||req.socket?.remoteAddress||'').split(',')[0].trim().slice(0,80)}
+function secLog(type,req,u,extra={}){db.securityLogs.unshift({time:Date.now(),type,user:u?.name||'',userId:u?.id||'',ip:clientIp(req),ua:String(req.headers['user-agent']||'').slice(0,180),...extra});db.securityLogs=db.securityLogs.slice(0,2000)}
+function audit(actor,action,target='',details={}){db.auditLogs.unshift({time:Date.now(),actor:actor?.name||String(actor||''),action,target,details});db.auditLogs=db.auditLogs.slice(0,3000)}
+function snap(label,actor){const data=JSON.parse(JSON.stringify(db));data.snapshots=[];const x={id:String(db.nextIds.snapshot++),time:Date.now(),label:String(label||'Snapshot').slice(0,80),actor:actor?.name||'system',data};db.snapshots.unshift(x);db.snapshots=db.snapshots.slice(0,12);return x.id}
+const loginBuckets=new Map();
+function loginLimited(req,name){const now=Date.now(),id=clientIp(req)+'|'+key(name),a=(loginBuckets.get(id)||[]).filter(t=>now-t<10*60000);if(a.length>=5)return true;a.push(now);loginBuckets.set(id,a);return false}
+function clearLoginBucket(req,name){loginBuckets.delete(clientIp(req)+'|'+key(name))}
+function newUser(name,pw,role='player',email=''){const h=hpw(pw);return{id:crypto.randomUUID(),name,email:String(email||'').trim().toLowerCase().slice(0,120),...h,role,banned:false,vip:false,vipUntil:0,cash:250000,bank:0,turns:300,hp:100,level:1,xp:0,rep:0,wanted:0,jailedUntil:0,insurance:{active:false,until:0,coverage:.3},privacy:{cash:false,bank:false,levels:true,stats:true,lastActive:false},education:0,securityLevel:1,mafiaLevel:1,propertyLevel:0,mafia:0,guards:0,weapons:{},crypto:0,city:'Paide',businesses:{},carLicense:0,cars:[],gangId:null,lastTurnAt:Date.now(),lastActive:Date.now(),pvpHits:{},maintenanceDue:Date.now()+86400000,sessionVersion:1,lastIp:'',lastUserAgent:'',lastLoginAt:0,failedLogins:0,lockedUntil:0,stats:{wins:0,losses:0,robbed:0,pokerWins:0,crimes:0,operations:0}}}
+function bankLimit(u){return EDU[u.education]?.bank||1e6}
+function chargeMaintenance(u){const property=PROPERTY_PRICES[u.propertyLevel]||0,troops=(u.mafia+u.guards)*250,weaponValue=Object.entries(u.weapons||{}).reduce((s,[i,q])=>s+(WEAPONS[i]?.price||0)*q,0),biz=Object.entries(u.businesses||{}).reduce((s,[id,l])=>s+(BIZ.find(x=>x.id===id)?.base||0)*l*.01,0),fee=Math.floor(property*db.settings.maintenanceRate+troops+weaponValue*.0005+biz);u.cash=Math.max(0,u.cash-fee);return fee}
+function refresh(u){const now=Date.now(),step=db.settings.turnMinutes*60000,n=Math.floor((now-u.lastTurnAt)/step);if(n>0){u.turns=Math.min(db.settings.maxNaturalTurns,u.turns+n*db.settings.turnBatch);u.lastTurnAt+=n*step}if(now>=u.maintenanceDue){chargeMaintenance(u);u.maintenanceDue=now+86400000}}
+function nextTurns(u){refresh(u);return Math.max(0,db.settings.turnMinutes*60000-(Date.now()-u.lastTurnAt))}
+function needTurns(u,n){refresh(u);if(u.turns<n)return false;u.turns-=n;return true}
+function progressionScore(l,max,share){return share*Math.pow(l/max,2.15)}
+function score(u){const progression=progressionScore(u.mafiaLevel,300,55e12)+progressionScore(u.securityLevel,300,55e12)+progressionScore(u.propertyLevel,100,40e12),troops=(u.mafia+u.guards)/5000*400e6,weps=Object.entries(u.weapons||{}).reduce((s,[i,q])=>s+(q/5000)*400e6*((+i+1)/WEAPONS.length),0),biz=Object.values(u.businesses||{}).reduce((s,l)=>s+l*l*5e7,0);return Math.floor(progression+troops+weps+u.crypto+biz+u.level*2e6)}
+function combat(u){const cap=(u.mafia+u.guards)*2,w=Object.entries(u.weapons||{}).reduce((s,[i,q])=>s+(WEAPONS[i]?.atk||0)*Math.min(q,cap),0),d=Object.entries(u.weapons||{}).reduce((s,[i,q])=>s+(WEAPONS[i]?.def||0)*Math.min(q,cap),0);return{atk:u.mafia*(20+u.mafiaLevel*1.8)+w,def:u.guards*(22+u.securityLevel*2)+d}}
+function freeWeapons(u){return Math.max(0,Object.values(u.weapons||{}).reduce((s,q)=>s+q,0)-(u.mafia+u.guards)*2)}
+function pub(u){refresh(u);return{id:u.id,name:u.name,role:u.role,banned:u.banned,vip:u.vip,cash:u.cash,bank:u.bank,turns:u.turns,nextTurnsMs:nextTurns(u),level:u.level,education:u.education,educationName:EDU[u.education].name,bankLimit:bankLimit(u),securityLevel:u.securityLevel,mafiaLevel:u.mafiaLevel,propertyLevel:u.propertyLevel,mafia:u.mafia,guards:u.guards,weapons:u.weapons,crypto:u.crypto,city:u.city,businesses:u.businesses,carLicense:u.carLicense,cars:u.cars,gangId:u.gangId,score:score(u),combat:combat(u),maintenanceDue:u.maintenanceDue,stats:u.stats,wanted:u.wanted,jailedUntil:u.jailedUntil,rep:u.rep,insurance:u.insurance,privacy:u.privacy,email:u.email,vipUntil:u.vipUntil}}
+const byId=id=>Object.values(db.users).find(u=>u.id===id);
 
-let db = defaultDb();
-if (fs.existsSync(DB_FILE)) {
-  try { db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); }
-  catch { console.error('DB parse failed; using empty DB'); }
-}
-db.users ||= {};
-db.settings ||= { heistMultiplier: 1, announcement: '' };
-db.logs ||= [];
+const app=express(),server=http.createServer(app),io=new Server(server);app.use(express.json({limit:'200kb'}));app.use(express.static(path.join(__dirname,'public')));
+function auth(req,res,next){const n=untoken((req.headers.authorization||'').replace(/^Bearer\s+/,'')),u=n&&db.users[key(n)];if(!u||u.banned)return res.status(401).json({error:'AUTH'});u.lastActive=Date.now();req.user=u;next()}
+function freeToAct(u){return !(u.jailedUntil&&u.jailedUntil>Date.now())}
+function admin(req,res,next){if(!['owner','admin'].includes(req.user.role))return res.status(403).json({error:'ADMIN_ONLY'});next()}
+function ok(res,u,extra={}){saveSoon();res.json({ok:true,user:pub(u),...extra})}
 
-let saveTimer = null;
-function saveSoon() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    const tmp = DB_FILE + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
-    fs.renameSync(tmp, DB_FILE);
-  }, 80);
-}
-function saveNow() {
-  const tmp = DB_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
-  fs.renameSync(tmp, DB_FILE);
-}
-process.on('SIGTERM', () => { try { saveNow(); } finally { process.exit(0); }});
-process.on('SIGINT', () => { try { saveNow(); } finally { process.exit(0); }});
-
-function normalizeName(x) {
-  return String(x || '').trim().replace(/\s+/g,' ').slice(0,18);
-}
-function keyName(x) { return normalizeName(x).toLowerCase(); }
-function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
-  const hash = crypto.scryptSync(String(password), salt, 64).toString('hex');
-  return { salt, hash };
-}
-function checkPassword(password, salt, hash) {
-  const h = crypto.scryptSync(String(password), salt, 64);
-  return crypto.timingSafeEqual(h, Buffer.from(hash, 'hex'));
-}
-function b64url(s) { return Buffer.from(s).toString('base64url'); }
-function signToken(username) {
-  const payload = b64url(JSON.stringify({ u: username, exp: Date.now() + 1000*60*60*24*30 }));
-  const sig = crypto.createHmac('sha256', TOKEN_SECRET).update(payload).digest('base64url');
-  return payload + '.' + sig;
-}
-function verifyToken(token) {
-  try {
-    const [p,sig] = String(token||'').split('.');
-    const expected = crypto.createHmac('sha256', TOKEN_SECRET).update(p).digest();
-    const got = Buffer.from(sig, 'base64url');
-    if (expected.length !== got.length || !crypto.timingSafeEqual(expected,got)) return null;
-    const data = JSON.parse(Buffer.from(p,'base64url').toString());
-    if (data.exp < Date.now()) return null;
-    return data.u;
-  } catch { return null; }
-}
-function newUser(name, password, role='player') {
-  const {salt,hash} = hashPassword(password);
-  return {
-    id: crypto.randomUUID(), name, salt, hash, role, banned:false, vip:false,
-    cash:250000, bank:0, turns:300, hp:100, xp:0, level:1, rep:0,
-    power:10, mafia:0, mafiaLevel:1, weapon:0, property:0,
-    lastTurnAt:Date.now(), lastHealAt:Date.now(), lastRobAt:0,
-    createdAt:Date.now(), stats:{wins:0,losses:0,robbed:0,pokerWins:0}
-  };
-}
-if (OWNER_PASSWORD && !db.users[keyName(OWNER_USERNAME)]) {
-  db.users[keyName(OWNER_USERNAME)] = newUser(OWNER_USERNAME, OWNER_PASSWORD, 'owner');
-  saveNow();
-  console.log('Owner account created:', OWNER_USERNAME);
-}
-if (!OWNER_PASSWORD) {
-  console.warn('WARNING: OWNER_PASSWORD is not set. Owner account will not be auto-created.');
-}
-
-const weapons = [
-  {name:'Rusikad',price:0,power:0},
-  {name:'Nuga',price:15000,power:45},
-  {name:'Püstol',price:120000,power:180},
-  {name:'SMG',price:650000,power:700},
-  {name:'Ründerelv',price:2800000,power:2400},
-  {name:'Täpsuspüss',price:12000000,power:8500}
-];
-const properties = [
-  {name:'Üürikorter',price:0,score:100},
-  {name:'Korter',price:180000,score:700},
-  {name:'Maja',price:850000,score:2800},
-  {name:'Villa',price:6500000,score:17000},
-  {name:'Hotell',price:48000000,score:95000},
-  {name:'Pilvelõhkuja',price:420000000,score:650000}
-];
-const crimes = [
-  {id:'shop',name:'Röövi väikepoodi',turns:8,min:2500,max:10000,risk:.10,xp:22},
-  {id:'car',name:'Varasta auto',turns:18,min:18000,max:80000,risk:.20,xp:55},
-  {id:'warehouse',name:'Röövi ladu',turns:35,min:90000,max:350000,risk:.28,xp:120},
-  {id:'bank',name:'Pangarööv',turns:80,min:700000,max:3500000,risk:.42,xp:300},
-  {id:'casino',name:'Kasiino operatsioon',turns:160,min:4000000,max:18000000,risk:.52,xp:700}
-];
-
-function refresh(u) {
-  const now = Date.now();
-  const step = u.turns < 700 ? 5000 : 30000;
-  const gain = Math.floor((now-u.lastTurnAt)/step);
-  if (gain > 0) {
-    u.turns = Math.min(5000, u.turns + gain);
-    u.lastTurnAt += gain*step;
-  }
-  const heal = Math.floor((now-u.lastHealAt)/10000);
-  if (heal > 0) {
-    u.hp = Math.min(100, u.hp + heal);
-    u.lastHealAt += heal*10000;
-  }
-}
-function levelNeed(u){ return 250*u.level*u.level; }
-function addXp(u,x) {
-  u.xp += x;
-  while (u.xp >= levelNeed(u)) {
-    u.xp -= levelNeed(u);
-    u.level++;
-    u.turns += 50;
-    u.cash += 25000*u.level;
-  }
-}
-function score(u) {
-  return Math.floor(u.cash/10000 + u.bank/20000 + u.power*12 + u.mafia*25*u.mafiaLevel +
-    properties[u.property].score + weapons[u.weapon].power*3 + u.level*100);
-}
-function publicUser(u) {
-  refresh(u);
-  return {
-    id:u.id,name:u.name,role:u.role,vip:u.vip,cash:u.cash,bank:u.bank,turns:u.turns,hp:u.hp,
-    xp:u.xp,level:u.level,rep:u.rep,power:u.power,mafia:u.mafia,mafiaLevel:u.mafiaLevel,
-    weapon:u.weapon,property:u.property,score:score(u),stats:u.stats, weaponName:weapons[u.weapon].name,
-    propertyName:properties[u.property].name
-  };
-}
-function rand(a,b){return Math.floor(Math.random()*(b-a+1))+a}
-function clamp(x,a,b){return Math.max(a,Math.min(b,x))}
-function requireTurns(u,n){refresh(u);if(u.turns<n)return false;u.turns-=n;return true}
-function log(type, text, user=null) {
-  db.logs.unshift({time:Date.now(),type,text,user:user?.name||null});
-  db.logs=db.logs.slice(0,500);
-}
-function byId(id){ return Object.values(db.users).find(u=>u.id===id); }
-
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server, { cors:{origin:false} });
-app.use(express.json({limit:'100kb'}));
-app.use(express.static(path.join(__dirname,'public')));
-
-function auth(req,res,next) {
-  const token = (req.headers.authorization||'').replace(/^Bearer\s+/,'');
-  const name = verifyToken(token);
-  const u = name && db.users[keyName(name)];
-  if (!u || u.banned) return res.status(401).json({error:'AUTH'});
-  req.user=u; next();
-}
-function admin(req,res,next){
-  if (!['admin','owner'].includes(req.user.role)) return res.status(403).json({error:'ADMIN_ONLY'});
-  next();
-}
-function ok(res,u,extra={}){saveSoon();res.json({ok:true,user:publicUser(u),...extra})}
-
-app.get('/api/config',(req,res)=>res.json({weapons,properties,crimes,settings:db.settings}));
-
-app.post('/api/register',(req,res)=>{
-  const name=normalizeName(req.body.name), pw=String(req.body.password||'');
-  if (name.length<3 || !/^[\p{L}\p{N}_ -]+$/u.test(name)) return res.status(400).json({error:'Nimi peab olema 3–18 märki.'});
-  if (pw.length<8) return res.status(400).json({error:'Parool peab olema vähemalt 8 märki.'});
-  const k=keyName(name); if(db.users[k])return res.status(409).json({error:'See nimi on juba kasutusel.'});
-  db.users[k]=newUser(name,pw);log('register','Uus mängija liitus.',db.users[k]);saveNow();
-  res.json({token:signToken(name),user:publicUser(db.users[k])});
-});
-app.post('/api/login',(req,res)=>{
-  const u=db.users[keyName(req.body.name)];
-  if(!u || !checkPassword(req.body.password||'',u.salt,u.hash)) return res.status(401).json({error:'Vale nimi või parool.'});
-  if(u.banned)return res.status(403).json({error:'Konto on blokeeritud.'});
-  res.json({token:signToken(u.name),user:publicUser(u)});
-});
+app.get('/api/config',(req,res)=>res.json({levelPrices:LEVEL_PRICES,propertyPrices:PROPERTY_PRICES,weapons:WEAPONS,crimes:CRIMES,edu:EDU,biz:BIZ,cities:CITIES,carLicenses:CAR_LICENSES,settings:db.settings}));
+app.post('/api/register',(req,res)=>{const n=norm(req.body.name),p=String(req.body.password||''),email=String(req.body.email||'').trim().toLowerCase();if(n.length<3||p.length<10)return res.status(400).json({error:'Nimi 3–18 märki, parool vähemalt 10.'});if(email&&(!email.includes('@')||email.length>120))return res.status(400).json({error:'Vigane e-mail.'});if(db.users[key(n)])return res.status(409).json({error:'Nimi kasutusel.'});if(email&&Object.values(db.users).some(x=>x.email===email))return res.status(409).json({error:'E-mail on juba kasutusel.'});const u=newUser(n,p,'player',email);u.lastIp=clientIp(req);u.lastUserAgent=String(req.headers['user-agent']||'').slice(0,180);db.users[key(n)]=u;secLog('register',req,u);saveNow();res.json({token:token(n),user:pub(u)})});
+app.post('/api/login',(req,res)=>{const name=req.body.name;if(loginLimited(req,name))return res.status(429).json({error:'Liiga palju sisselogimiskatseid. Proovi 10 minuti pärast.'});const u=db.users[key(name)];if(u?.lockedUntil>Date.now())return res.status(429).json({error:'Konto on ajutiselt lukus.'});if(!u||!checkPw(req.body.password||'',u.salt,u.hash)){if(u){u.failedLogins=(u.failedLogins||0)+1;if(u.failedLogins>=5)u.lockedUntil=Date.now()+15*60000}secLog('login_failed',req,u,{attemptedName:norm(name)});saveSoon();return res.status(401).json({error:'Vale nimi või parool.'})}if(u.banned)return res.status(403).json({error:'Konto on blokeeritud.'});u.failedLogins=0;u.lockedUntil=0;u.lastIp=clientIp(req);u.lastUserAgent=String(req.headers['user-agent']||'').slice(0,180);u.lastLoginAt=Date.now();clearLoginBucket(req,name);secLog('login_ok',req,u);saveSoon();res.json({token:token(u.name),user:pub(u)})});
+app.post('/api/password/forgot',async(req,res)=>{const u=db.users[key(req.body.name)];if(!u){return res.json({message:'Kui konto eksisteerib, taastamissoov salvestati.'})}const raw=crypto.randomBytes(24).toString('hex'),hash=crypto.createHash('sha256').update(raw).digest('hex');db.passwordResetTokens[hash]={userId:u.id,expires:Date.now()+3600000,used:false};db.resetRequests[u.id]={name:u.name,time:Date.now(),status:'pending'};secLog('password_reset_requested',req,u);saveSoon();let sent=false;if(u.email&&SMTP_HOST&&SMTP_USER&&SMTP_PASS&&PUBLIC_URL){try{const tr=nodemailer.createTransport({host:SMTP_HOST,port:SMTP_PORT,secure:SMTP_PORT===465,auth:{user:SMTP_USER,pass:SMTP_PASS}});await tr.sendMail({from:SMTP_FROM||SMTP_USER,to:u.email,subject:'VARJURIIK parooli taastamine',text:`Ava 1 tunni jooksul: ${PUBLIC_URL}/?reset=${raw}`});sent=true}catch(e){console.error('reset mail',e.message)}}res.json({message:sent?'Taastamislink saadeti e-mailile.':'Taastamissoov salvestati. Kui e-mail pole seadistatud, saab admin anda ajutise parooli.'})});
+app.post('/api/password/reset',(req,res)=>{const raw=String(req.body.token||''),nw=String(req.body.password||''),hash=crypto.createHash('sha256').update(raw).digest('hex'),r=db.passwordResetTokens[hash];if(!r||r.used||r.expires<Date.now()||nw.length<10)return res.status(400).json({error:'Taastamislink on vigane/aegunud või parool liiga lühike.'});const u=byId(r.userId);if(!u)return res.status(404).json({error:'Kontot pole.'});const h=hpw(nw);u.salt=h.salt;u.hash=h.hash;u.sessionVersion=(u.sessionVersion||1)+1;r.used=true;if(db.resetRequests[u.id])db.resetRequests[u.id].status='done';secLog('password_reset_done',req,u);saveNow();res.json({message:'Parool muudetud. Logi nüüd sisse.'})});
 app.get('/api/me',auth,(req,res)=>ok(res,req.user,{settings:db.settings}));
-app.get('/api/players',auth,(req,res)=>{
-  const list=Object.values(db.users).filter(x=>!x.banned).map(x=>({id:x.id,name:x.name,level:x.level,score:score(x),vip:x.vip,online:online.has(x.id)})).sort((a,b)=>b.score-a.score).slice(0,100);
-  res.json({players:list});
+app.post('/api/education',auth,(req,res)=>{const u=req.user,e=EDU[u.education+1];if(!e)return res.status(400).json({error:'Haridus max.'});if(u.cash<e.cost)return res.status(400).json({error:'Raha pole piisavalt.'});if(!needTurns(u,e.turns))return res.status(400).json({error:`Vaja ${e.turns} käiku.`});u.cash-=e.cost;u.education++;ok(res,u,{message:`Haridus: ${e.name}`})});
+app.post('/api/bank',auth,(req,res)=>{const u=req.user,a=Math.floor(+req.body.amount||0);if(a<=0)return res.status(400).json({error:'Vigane summa.'});if(req.body.dir==='in'){if(a>u.cash)return res.status(400).json({error:'Sularaha puudub.'});if(u.bank+a>bankLimit(u))return res.status(400).json({error:`Pangalimiit ${bankLimit(u)} €.`});u.cash-=a;u.bank+=a}else{if(a>u.bank)return res.status(400).json({error:'Pangas pole piisavalt.'});u.bank-=a;u.cash+=a}ok(res,u)});
+app.post('/api/levelup',auth,(req,res)=>{const u=req.user,t=req.body.type,field=t==='mafia'?'mafiaLevel':t==='security'?'securityLevel':t==='property'?'propertyLevel':null;if(!field)return res.status(400).json({error:'Vigane level.'});const max=t==='property'?100:300,n=u[field]+1,cost=t==='property'?PROPERTY_PRICES[n]:LEVEL_PRICES[n];if(n>max)return res.status(400).json({error:'Max level.'});if(u.cash<cost)return res.status(400).json({error:`Vaja ${cost} €.`});u.cash-=cost;u[field]=n;ok(res,u,{message:`${t} level ${n}`})});
+app.post('/api/troops',auth,(req,res)=>{const u=req.user,type=req.body.type,n=Math.max(1,Math.min(100000,Math.floor(+req.body.n||0))),unit=type==='mafia'?12000:13500;if(!['mafia','guards'].includes(type))return res.status(400).json({error:'Vigane tüüp.'});const cost=n*unit;if(u.cash<cost)return res.status(400).json({error:`Vaja ${cost} €.`});u.cash-=cost;u[type]+=n;ok(res,u,{message:`+${n} ${type}`})});
+app.post('/api/weapon',auth,(req,res)=>{const u=req.user,i=Math.floor(+req.body.index),q=Math.max(1,Math.min(10000,Math.floor(+req.body.q||1))),w=WEAPONS[i];if(!w)return res.status(400).json({error:'Vigane relv.'});const cost=Math.floor(w.price*db.settings.weaponMarket*q),turns=4*q;db.settings.marketPressure+=q;if(u.cash<cost)return res.status(400).json({error:'Raha pole piisavalt.'});if(!needTurns(u,turns))return res.status(400).json({error:`Vaja ${turns} käiku.`});u.cash-=cost;u.weapons[i]=(u.weapons[i]||0)+q;ok(res,u,{message:`Ostsid ${q} × ${w.name}`})});
+app.post('/api/crime',auth,(req,res)=>{const u=req.user,c=CRIMES.find(x=>x.id===req.body.id);if(!freeToAct(u))return res.status(403).json({error:'Oled vanglas.'});if(!c||u.level<c.need)return res.status(400).json({error:'Rööv lukus.'});if(!needTurns(u,c.turns))return res.status(400).json({error:`Vaja ${c.turns} käiku.`});const cb=combat(u),fail=clamp(c.risk-cb.atk/(cb.atk+3e6),.04,.72);let msg;if(Math.random()<fail){let loss=Math.floor(rand(c.min,c.max)*.25);if(u.insurance?.active&&u.insurance.until>Date.now()){const refund=Math.floor(loss*(u.insurance.coverage||.3));loss-=refund;msg=`Kindlustus kattis ${refund} €. `}else msg='';u.cash=Math.max(0,u.cash-loss);u.wanted=clamp((u.wanted||0)+2,0,100);if(Math.random()<clamp(.08+u.wanted/180,.08,.65)){const mins=5+Math.floor(u.wanted/5);u.jailedUntil=Date.now()+mins*60000;msg+=`Jäid ${mins} minutiks vangi. `}msg+=`Rööv ebaõnnestus. Kaotasid ${loss} €.`}else{const g=Math.floor(rand(c.min,c.max)*db.settings.heistMultiplier);u.cash+=g;u.stats.crimes++;u.wanted=clamp((u.wanted||0)+1+Math.floor(c.risk*5),0,100);u.rep=clamp((u.rep||0)+1,-1000,1000);u.level=1+Math.floor(Math.sqrt(u.stats.crimes/5));msg=`Rööv õnnestus: +${g} €.`}ok(res,u,{message:msg})});
+app.get('/api/players',auth,(req,res)=>res.json({players:Object.values(db.users).filter(x=>!x.banned).map(x=>({id:x.id,name:x.name,level:x.level,score:score(x),city:x.city,gangId:x.gangId,vip:x.vip,rep:x.rep,wanted:x.wanted,cash:x.privacy?.cash?x.cash:undefined,mafiaLevel:x.privacy?.levels?x.mafiaLevel:undefined,securityLevel:x.privacy?.levels?x.securityLevel:undefined})).sort((a,b)=>b.score-a.score).slice(0,200)}));
+app.post('/api/rob-player',auth,(req,res)=>{const a=req.user,b=byId(req.body.targetId);if(!b||b.id===a.id)return res.status(400).json({error:'Vigane sihtmärk.'});const now=Date.now(),winMs=db.settings.pvpWindowMin*60000,k=b.id,h=(a.pvpHits[k]||[]).filter(t=>now-t<winMs);if(h.length>=db.settings.pvpMaxHits)return res.status(429).json({error:`Seda mängijat saad ${db.settings.pvpWindowMin} min jooksul rünnata max ${db.settings.pvpMaxHits} korda.`});if(!needTurns(a,30))return res.status(400).json({error:'Vaja 30 käiku.'});h.push(now);a.pvpHits[k]=h;if(a.gangId&&db.gangs[a.gangId])db.gangs[a.gangId].points+=10;const A=combat(a),B=combat(b),chance=clamp(A.atk/(A.atk+B.def+1),.12,.88);let msg;if(Math.random()<chance){const take=Math.floor(Math.min(b.cash*.06,Math.max(10000,score(b)*.00002)));b.cash-=take;a.cash+=take;a.stats.wins++;b.stats.losses++;msg=`Võit! Röövisid ${take} €.`;for(const bo of Object.values(db.bounties)){if(bo.active&&bo.targetId===b.id){a.cash+=bo.amount;bo.active=false;bo.claimedBy=a.id;bo.claimedAt=Date.now();msg+=` Pearaha +${bo.amount} €.`}}const loose=freeWeapons(b);if(loose>0&&Math.random()<.25){const cand=Object.entries(b.weapons).filter(([,q])=>q>0);if(cand.length){const[i,q]=cand[rand(0,cand.length-1)],stolen=Math.min(q,Math.max(1,Math.floor(loose*.1)));b.weapons[i]-=stolen;a.weapons[i]=(a.weapons[i]||0)+stolen;msg+=` Lisaks ${stolen} relva.`}}}else{a.stats.losses++;b.stats.wins++;msg='Rünnak ebaõnnestus.'}ok(res,a,{message:msg})});
+app.post('/api/travel',auth,(req,res)=>{const u=req.user,c=CITIES.find(x=>x[0]===req.body.city);if(!c)return res.status(400).json({error:'Linna pole.'});if(!needTurns(u,10))return res.status(400).json({error:'Reisimine vajab 10 käiku.'});u.cash=Math.max(0,u.cash-25000);u.city=c[0];ok(res,u,{message:`Reisisid: ${c[0]}`})});
+app.post('/api/business',auth,(req,res)=>{const u=req.user,b=BIZ.find(x=>x.id===req.body.id);if(!b)return res.status(400).json({error:'Firma puudub.'});const lvl=u.businesses[b.id]||0,n=lvl+1,cost=Math.floor(b.base*Math.pow(2.05,lvl));if(u.cash<cost)return res.status(400).json({error:`Vaja ${cost} €.`});if(!needTurns(u,40))return res.status(400).json({error:'Vaja 40 käiku.'});u.cash-=cost;u.businesses[b.id]=n;ok(res,u,{message:`${b.name} level ${n}`})});
+app.post('/api/business/collect',auth,(req,res)=>{const u=req.user;if(!needTurns(u,15))return res.status(400).json({error:'Vaja 15 käiku.'});let total=0;for(const[id,l]of Object.entries(u.businesses)){const b=BIZ.find(x=>x.id===id),bonus=u.city===b.city?1.08:1;total+=Math.floor(b.income*l*l*bonus)}u.cash+=total;ok(res,u,{message:`Ettevõtted teenisid ${total} €.`})});
+app.post('/api/car/license',auth,(req,res)=>{const u=req.user,l=CAR_LICENSES.find(x=>x.level===u.carLicense+1);if(!l)return res.status(400).json({error:'Kõik litsentsid olemas.'});if(u.cash<l.cost)return res.status(400).json({error:`Vaja ${l.cost} €.`});u.cash-=l.cost;u.carLicense++;ok(res,u,{message:`Litsents: ${l.name}`})});
+app.post('/api/car/buy',auth,(req,res)=>{const u=req.user,l=CAR_LICENSES.find(x=>x.level===u.carLicense);if(!l)return res.status(400).json({error:'Vaja autolitsentsi.'});const buy=Math.floor(rand(l.min,l.max)*db.settings.carMarket),market=Math.floor(buy*(1.08+Math.random()*.20));db.settings.marketPressure+=2;if(u.cash<buy)return res.status(400).json({error:'Raha puudub.'});if(!needTurns(u,12))return res.status(400).json({error:'Vaja 12 käiku.'});u.cash-=buy;u.cars.push({id:crypto.randomUUID(),name:`${l.name} auto`,buy,market});ok(res,u,{message:`Ostsid auto ${buy} € eest. Turuväärtus ~${market} €.`})});
+app.post('/api/car/list',auth,(req,res)=>{const u=req.user,c=u.cars.find(x=>x.id===req.body.id),price=Math.floor(+req.body.price||0);if(!c||price<=0)return res.status(400).json({error:'Vigane auto/hind.'});const id=String(db.nextIds.listing++);db.carListings[id]={id,seller:u.id,car:c,price,time:Date.now()};u.cars=u.cars.filter(x=>x.id!==c.id);ok(res,u,{message:'Auto pandi turule.'})});
+app.get('/api/car/market',auth,(req,res)=>res.json({listings:Object.values(db.carListings)}));
+app.post('/api/car/buy-market',auth,(req,res)=>{const u=req.user,l=db.carListings[req.body.id];if(!l)return res.status(404).json({error:'Kuulutus puudub.'});if(l.seller===u.id)return res.status(400).json({error:'Enda autot ei saa osta.'});if(u.cash<l.price)return res.status(400).json({error:'Raha puudub.'});const seller=byId(l.seller),fee=Math.floor(l.price*db.settings.marketFee);u.cash-=l.price;seller.cash+=l.price-fee;u.cars.push(l.car);delete db.carListings[l.id];ok(res,u,{message:`Ostsid auto ${l.price} € eest.`})});
+function updateCrypto(){if(Date.now()<db.settings.cryptoNext)return;const mid=(db.settings.cryptoMin+db.settings.cryptoMax)/2,drift=(mid-db.settings.cryptoPrice)*.18,noise=rand(-22,22);db.settings.cryptoPrice=clamp(Math.round(db.settings.cryptoPrice+drift+noise),db.settings.cryptoMin,db.settings.cryptoMax);db.settings.cryptoNext=Date.now()+900000;io.emit('settings',db.settings);saveSoon()}
+app.post('/api/crypto',auth,(req,res)=>{updateCrypto();const u=req.user,q=Math.max(1,Math.floor(+req.body.q||0)),max=Math.floor(score(u));if(req.body.dir==='buy'){if(u.crypto+q>max)return res.status(400).json({error:`Skoori järgi saad omada max ${max} krüptot.`});const cost=q*db.settings.cryptoPrice;if(u.cash<cost)return res.status(400).json({error:'Raha puudub.'});u.cash-=cost;u.crypto+=q}else{if(q>u.crypto)return res.status(400).json({error:'Krüptot pole piisavalt.'});u.crypto-=q;u.cash+=q*db.settings.cryptoPrice}ok(res,u)});
+app.post('/api/player-bank/create',auth,(req,res)=>{const u=req.user;if(db.playerBanks[u.id])return res.status(400).json({error:'Pank juba olemas.'});if(u.education<4)return res.status(400).json({error:'Panga loomiseks vaja vähemalt bakalaureust.'});if(u.cash<100e6)return res.status(400).json({error:'Vaja 100M kapitali.'});u.cash-=100e6;db.playerBanks[u.id]={owner:u.id,name:String(req.body.name||u.name+' Pank').slice(0,30),capital:100e6,maxLoan:50e6,rate:10,durationHours:24,active:true};ok(res,u,{message:'Pank loodud.'})});
+app.get('/api/player-banks',auth,(req,res)=>res.json({banks:Object.values(db.playerBanks)}));
+app.post('/api/player-bank/settings',auth,(req,res)=>{const b=db.playerBanks[req.user.id];if(!b)return res.status(404).json({error:'Panka pole.'});b.maxLoan=Math.max(1000,Math.floor(+req.body.maxLoan||b.maxLoan));b.rate=clamp(+req.body.rate||b.rate,0,100);b.durationHours=clamp(Math.floor(+req.body.durationHours||b.durationHours),1,720);ok(res,req.user)});
+app.post('/api/loan/take',auth,(req,res)=>{const u=req.user,b=db.playerBanks[req.body.owner],a=Math.floor(+req.body.amount||0);if(!b||!b.active||a<=0||a>b.maxLoan||a>b.capital)return res.status(400).json({error:'Laenu ei saa.'});const id=String(db.nextIds.loan++);b.capital-=a;u.cash+=a;db.loans[id]={id,bankOwner:b.owner,borrower:u.id,principal:a,rate:b.rate,due:Date.now()+b.durationHours*3600000,status:'active'};ok(res,u,{message:`Laen ${a} € võetud.`})});
+app.get('/api/loans',auth,(req,res)=>res.json({loans:Object.values(db.loans).filter(l=>l.borrower===req.user.id||l.bankOwner===req.user.id)}));
+function settleLoans(){const now=Date.now();for(const l of Object.values(db.loans)){if(l.status!=='active'||now<l.due)continue;const u=byId(l.borrower),b=db.playerBanks[l.bankOwner];if(!u||!b)continue;const due=Math.floor(l.principal*(1+l.rate/100));if(u.cash>=due){u.cash-=due;b.capital+=due;l.status='paid'}else{const paid=u.cash;b.capital+=paid;u.cash=0;let debt=due-paid;while(debt>0&&u.propertyLevel>0){debt-=PROPERTY_PRICES[u.propertyLevel]||1;u.propertyLevel--}while(debt>0&&u.mafiaLevel>1){debt-=LEVEL_PRICES[u.mafiaLevel]||1;u.mafiaLevel--}while(debt>0&&u.securityLevel>1){debt-=LEVEL_PRICES[u.securityLevel]||1;u.securityLevel--}l.status='defaulted'}}saveSoon()}
+app.post('/api/gang/create',auth,(req,res)=>{const u=req.user;if(u.gangId)return res.status(400).json({error:'Oled juba kambas.'});const name=String(req.body.name||'').trim().slice(0,24),password=String(req.body.password||'');if(name.length<3||password.length<4)return res.status(400).json({error:'Nimi/parool liiga lühike.'});const id=crypto.randomUUID(),h=hpw(password);db.gangs[id]={id,name,leader:u.id,assistants:[],members:[u.id],fund:0,points:0,weapons:{},...h};u.gangId=id;ok(res,u,{message:'Kamp loodud.'})});
+app.post('/api/gang/join',auth,(req,res)=>{const u=req.user,g=db.gangs[req.body.id];if(!g||!checkPw(req.body.password||'',g.salt,g.hash))return res.status(400).json({error:'Vale kamp/parool.'});if(u.gangId)return res.status(400).json({error:'Oled juba kambas.'});g.members.push(u.id);u.gangId=g.id;ok(res,u,{message:'Liitusid kambaga.'})});
+app.get('/api/gangs',auth,(req,res)=>res.json({gangs:Object.values(db.gangs).map(g=>({id:g.id,name:g.name,leader:byId(g.leader)?.name||'?',members:g.members.length,points:g.points,fund:g.fund}))}));
+app.post('/api/gang/donate',auth,(req,res)=>{const u=req.user,g=db.gangs[u.gangId],a=Math.floor(+req.body.amount||0);if(!g||a<=0||a>u.cash)return res.status(400).json({error:'Vigane summa.'});u.cash-=a;g.fund+=a;ok(res,u)});
+app.get('/api/lottery',auth,(req,res)=>res.json(db.settings.lottery));
+app.post('/api/lottery/buy',auth,(req,res)=>{const u=req.user,L=db.settings.lottery,q=Math.max(1,Math.floor(+req.body.q||1));if(!L.active||Date.now()>=L.drawAt)return res.status(400).json({error:'Loos pole aktiivne.'});const cur=L.tickets[u.id]||0;if(cur+q>L.maxTickets)return res.status(400).json({error:'Piletite limiit.'});const cost=q*L.ticketPrice;if(u.cash<cost)return res.status(400).json({error:'Raha puudub.'});u.cash-=cost;L.tickets[u.id]=cur+q;ok(res,u)});
+function drawLottery(){const L=db.settings.lottery;if(!L.active||Date.now()<L.drawAt)return;const pool=[];for(const[id,q]of Object.entries(L.tickets))for(let i=0;i<q;i++)pool.push(id);if(pool.length){const id=pool[rand(0,pool.length-1)],u=byId(id);if(u){u.cash+=L.prize;L.winner=u.name}}L.active=false;io.emit('settings',db.settings);saveSoon()}
+app.get('/api/chat',auth,(req,res)=>res.json({chat:db.chat.slice(-100)}));
+app.post('/api/chat',auth,(req,res)=>{const msg=String(req.body.message||'').trim().slice(0,280);if(!msg)return res.status(400).json({error:'Tühi sõnum.'});const x={id:crypto.randomUUID(),user:req.user.name,userId:req.user.id,time:Date.now(),message:msg};db.chat.push(x);db.chat=db.chat.slice(-300);io.emit('chat',x);ok(res,req.user)});
+
+const SECRET_OPS=[
+{id:'convoy',name:'Relvakonvoi',needLevel:20,turns:120,cost:2000000,rewardMin:8000000,rewardMax:25000000,risk:.28,repNeed:5},
+{id:'vault',name:'Maa-alune varakamber',needLevel:55,turns:300,cost:50000000,rewardMin:180000000,rewardMax:650000000,risk:.38,repNeed:25},
+{id:'network',name:'Varivõrgustik',needLevel:100,turns:700,cost:1000000000,rewardMin:4000000000,rewardMax:14000000000,risk:.48,repNeed:60}
+];
+app.get('/api/underworld',auth,(req,res)=>res.json({wanted:req.user.wanted,jailedUntil:req.user.jailedUntil,rep:req.user.rep,insurance:req.user.insurance,operations:SECRET_OPS,bounties:Object.values(db.bounties).filter(x=>x.active).map(x=>({...x,targetName:byId(x.targetId)?.name||'?',posterName:byId(x.posterId)?.name||'?'})),turnShop:Object.values(db.turnShop).filter(x=>x.active&&(!x.startsAt||Date.now()>=x.startsAt)&&(!x.endsAt||Date.now()<=x.endsAt))}));
+app.post('/api/jail/bail',auth,(req,res)=>{const u=req.user;if(!u.jailedUntil||u.jailedUntil<=Date.now())return res.status(400).json({error:'Sa pole vanglas.'});const mins=Math.ceil((u.jailedUntil-Date.now())/60000),cost=Math.max(50000,mins*50000*(1+u.wanted/100));if(u.cash<cost)return res.status(400).json({error:`Kautsjon maksab ${Math.floor(cost)} €.`});u.cash-=Math.floor(cost);u.jailedUntil=0;u.wanted=Math.max(0,u.wanted-10);ok(res,u,{message:`Kautsjon ${Math.floor(cost)} € makstud.`})});
+app.post('/api/insurance/buy',auth,(req,res)=>{const u=req.user,days=clamp(Math.floor(+req.body.days||7),1,30),asset=Math.max(1e6,Math.floor(score(u)*.00002+u.cash+u.bank*.2)),cost=Math.floor(asset*.012*days/7);if(u.cash<cost)return res.status(400).json({error:`Kindlustus maksab ${cost} €.`});u.cash-=cost;u.insurance={active:true,until:Date.now()+days*86400000,coverage:.3};ok(res,u,{message:`Kindlustus ${days} päevaks aktiveeritud.`})});
+app.post('/api/operation',auth,(req,res)=>{const u=req.user,o=SECRET_OPS.find(x=>x.id===req.body.id);if(!freeToAct(u))return res.status(403).json({error:'Oled vanglas.'});if(!o||u.level<o.needLevel||u.rep<o.repNeed)return res.status(400).json({error:'Operatsiooni nõuded pole täidetud.'});if(u.cash<o.cost)return res.status(400).json({error:'Ettevalmistusraha puudub.'});if(!needTurns(u,o.turns))return res.status(400).json({error:`Vaja ${o.turns} käiku.`});u.cash-=o.cost;const cb=combat(u),risk=clamp(o.risk-cb.atk/(cb.atk+2e8),.08,.70);if(Math.random()<risk){u.wanted=clamp(u.wanted+8,0,100);u.rep=Math.max(-1000,u.rep-3);if(Math.random()<.45)u.jailedUntil=Date.now()+(15+Math.floor(u.wanted/2))*60000;return ok(res,u,{message:'Salajane operatsioon ebaõnnestus.'})}const gain=rand(o.rewardMin,o.rewardMax);u.cash+=gain;u.stats.operations++;u.rep=clamp(u.rep+5,-1000,1000);u.wanted=clamp(u.wanted+5,0,100);ok(res,u,{message:`Operatsioon õnnestus: +${gain} €.`})});
+app.get('/api/bounties',auth,(req,res)=>res.json({bounties:Object.values(db.bounties).filter(x=>x.active).map(x=>({...x,targetName:byId(x.targetId)?.name||'?',posterName:byId(x.posterId)?.name||'?'}))}));
+app.post('/api/bounty',auth,(req,res)=>{const u=req.user,t=byId(req.body.targetId),amount=Math.floor(+req.body.amount||0);if(!t||t.id===u.id||amount<100000)return res.status(400).json({error:'Vigane siht või min bounty 100 000 €.'});if(u.cash<amount)return res.status(400).json({error:'Raha puudub.'});u.cash-=amount;const id=String(db.nextIds.bounty++);db.bounties[id]={id,posterId:u.id,targetId:t.id,amount,active:true,createdAt:Date.now()};ok(res,u,{message:`Pearaha ${amount} € pandud mängijale ${t.name}.`})});
+app.get('/api/turn-shop',auth,(req,res)=>res.json({packs:Object.values(db.turnShop).filter(x=>x.active),orders:Object.values(db.turnOrders).filter(x=>x.userId===req.user.id).slice(-20)}));
+app.post('/api/turn-shop/order',auth,(req,res)=>{const p=db.turnShop[req.body.packId];if(!p||!p.active)return res.status(404).json({error:'Paketti pole.'});const count=Object.values(db.turnOrders).filter(x=>x.userId===req.user.id&&x.packId===p.id&&x.status==='approved'&&x.createdAt>Date.now()-86400000).length;if(p.dailyLimit&&count>=p.dailyLimit)return res.status(400).json({error:'Päevalimiit täis.'});const id=String(db.nextIds.turnOrder++);db.turnOrders[id]={id,userId:req.user.id,packId:p.id,turns:p.turns,price:p.price,paymentName:p.paymentName,paymentInfo:p.paymentInfo,status:'pending',createdAt:Date.now()};ok(res,req.user,{message:'Tellimus saadeti adminile kinnitamiseks.'})});
+app.post('/api/privacy',auth,(req,res)=>{for(const k of ['cash','bank','levels','stats','lastActive'])if(req.body[k]!=null)req.user.privacy[k]=!!req.body[k];ok(res,req.user,{message:'Profiili privaatsus salvestatud.'})});
+app.get('/api/stats',auth,(req,res)=>{const us=Object.values(db.users).filter(x=>!x.banned);const top=(f)=>us.map(u=>({name:u.name,value:f(u)})).sort((a,b)=>b.value-a.value).slice(0,20);res.json({score:top(score),cash:top(u=>u.cash+u.bank),wins:top(u=>u.stats.wins),crimes:top(u=>u.stats.crimes),rep:top(u=>u.rep),wanted:top(u=>u.wanted)})});
+app.get('/api/admin/users',auth,admin,(req,res)=>res.json({users:Object.values(db.users).map(u=>pub(u))}));
+app.post('/api/admin/user',auth,admin,(req,res)=>{const t=byId(req.body.id),a=req.body.action,v=Number(req.body.value)||0;if(!t)return res.status(404).json({error:'Mängijat pole.'});if(t.role==='owner'&&a==='ban')return res.status(400).json({error:'Ownerit ei saa bannida.'});if(t.role==='owner'&&req.user.role!=='owner')return res.status(403).json({error:'Ownerit muuta ei saa.'});const map={cash:'cash',turns:'turns',mafia:'mafia',guards:'guards',mafiaLevel:'mafiaLevel',securityLevel:'securityLevel',propertyLevel:'propertyLevel',education:'education',crypto:'crypto'};if(map[a])t[map[a]]=Math.max(0,Math.floor(v));else if(a==='vip')t.vip=!t.vip;else if(a==='ban')t.banned=!t.banned;else if(a==='admin'&&req.user.role==='owner'&&t.role!=='owner')t.role=t.role==='admin'?'player':'admin';else return res.status(400).json({error:'Vigane tegevus.'});audit(req.user,'user_change',t.id,{action:a,value:v});saveNow();io.to('user:'+t.id).emit('toast','Admin muutis sinu kontot.');res.json({ok:true})});
+app.get('/api/admin/security',auth,admin,(req,res)=>{
+ const groups={};for(const u of Object.values(db.users)){if(!u.lastIp)continue;(groups[u.lastIp]??=[]).push({id:u.id,name:u.name,lastLoginAt:u.lastLoginAt})}
+ const sharedIps=Object.entries(groups).filter(([,a])=>a.length>1).map(([ip,users])=>({ip,users}));
+ res.json({logs:db.securityLogs.slice(0,300),sharedIps,resetRequests:Object.values(db.resetRequests).filter(x=>x.status==='pending')})
 });
-app.post('/api/crime',auth,(req,res)=>{
-  const u=req.user,c=crimes.find(x=>x.id===req.body.id);if(!c)return res.status(400).json({error:'Vigane rööv.'});
-  if(!requireTurns(u,c.turns))return res.status(400).json({error:'Käike pole piisavalt.'});
-  const fail=clamp(c.risk-(u.power+weapons[u.weapon].power+u.mafia*3)/(100000+u.level*3000),.05,.75);
-  let message;
-  if(Math.random()<fail){const loss=rand(Math.floor(c.min*.2),Math.floor(c.max*.35));u.cash=Math.max(0,u.cash-loss);u.hp=clamp(u.hp-rand(8,25),0,100);addXp(u,Math.floor(c.xp*.35));message=`Rööv ebaõnnestus. Kaotasid ${loss} €.`}
-  else {const gain=Math.floor(rand(c.min,c.max)*(1+u.level*.025+u.mafiaLevel*.02)*db.settings.heistMultiplier);u.cash+=gain;u.rep+=Math.ceil(c.xp/20);addXp(u,c.xp);message=`Rööv õnnestus. Saak ${gain} €.`}
-  log('crime',message,u);ok(res,u,{message});
-});
-app.post('/api/train',auth,(req,res)=>{
-  const u=req.user;if(!requireTurns(u,10))return res.status(400).json({error:'Käike pole piisavalt.'});
-  const g=rand(7,13)+Math.floor(u.level/4);u.power+=g;addXp(u,18);ok(res,u,{message:`Treening +${g} jõudu.`});
-});
-app.post('/api/recruit',auth,(req,res)=>{
-  const u=req.user,n=Math.max(1,Math.min(1000,Number(req.body.n)||10)),cost=n*(9000+u.mafia*60);
-  if(u.cash<cost)return res.status(400).json({error:`Vaja ${cost} €.`});u.cash-=cost;u.mafia+=n;addXp(u,n*3);ok(res,u,{message:`Värbasid ${n} mafioosot.`});
-});
-app.post('/api/buy',auth,(req,res)=>{
-  const u=req.user,type=req.body.type,i=Number(req.body.index);
-  const arr=type==='weapon'?weapons:properties;const cur=type==='weapon'?u.weapon:u.property;
-  if(!Number.isInteger(i)||!arr[i]||i<=cur)return res.status(400).json({error:'Vigane ost.'});
-  if(u.cash<arr[i].price)return res.status(400).json({error:'Raha pole piisavalt.'});
-  u.cash-=arr[i].price;if(type==='weapon')u.weapon=i;else u.property=i;ok(res,u,{message:`Ostsid: ${arr[i].name}.`});
-});
-app.post('/api/bank',auth,(req,res)=>{
-  const u=req.user,a=Math.floor(Number(req.body.amount)||0),dir=req.body.dir;
-  if(a<=0)return res.status(400).json({error:'Vigane summa.'});
-  if(dir==='in'){if(a>u.cash)return res.status(400).json({error:'Sularaha pole piisavalt.'});u.cash-=a;u.bank+=a}
-  else {if(a>u.bank)return res.status(400).json({error:'Pangas pole piisavalt.'});u.bank-=a;u.cash+=a}
-  ok(res,u);
-});
-app.post('/api/rob-player',auth,(req,res)=>{
-  const a=req.user,b=byId(req.body.targetId);
-  if(!b||b.id===a.id||b.banned)return res.status(400).json({error:'Vigane mängija.'});
-  if(Date.now()-a.lastRobAt<60000)return res.status(429).json({error:'Uut mängijat saad röövida 60 sekundi pärast.'});
-  if(!requireTurns(a,20))return res.status(400).json({error:'Vaja 20 käiku.'});
-  a.lastRobAt=Date.now();refresh(b);
-  const ap=score(a)+a.power*20+weapons[a.weapon].power*5+a.mafia*a.mafiaLevel*15;
-  const bp=score(b)+b.power*20+weapons[b.weapon].power*5+b.mafia*b.mafiaLevel*15;
-  const chance=clamp(ap/(ap+bp),.15,.85);
-  let message;
-  if(Math.random()<chance){
-    const maxTake=Math.min(b.cash*.08, Math.max(10000,score(b)*70));
-    const take=Math.floor(maxTake*(.35+Math.random()*.65));
-    b.cash=Math.max(0,b.cash-take);a.cash+=take;a.rep+=5;a.stats.wins++;b.stats.losses++;b.stats.robbed+=take;addXp(a,90);
-    message=`Röövisid mängijalt ${b.name} ${take} €.`;
-    io.to('user:'+b.id).emit('toast',`${a.name} röövis sinult ${take} €!`);
-  } else {
-    a.hp=clamp(a.hp-rand(8,22),0,100);a.cash=Math.floor(a.cash*.98);a.stats.losses++;b.stats.wins++;message=`${b.name} tõrjus sinu rünnaku.`;
-  }
-  log('pvp',message,a);saveSoon();ok(res,a,{message});
+app.post('/api/admin/password-reset',auth,admin,(req,res)=>{
+ let t=byId(req.body.id),nw=String(req.body.newPassword||'');if(!t)return res.status(404).json({error:'Mängijat pole.'});if(t.role==='owner'&&req.user.role!=='owner')return res.status(403).json({error:'Ownerit muuta ei saa.'});if(nw.length<10)return res.status(400).json({error:'Ajutine parool peab olema vähemalt 10 märki.'});
+ let h=hpw(nw);t.salt=h.salt;t.hash=h.hash;t.sessionVersion=(t.sessionVersion||1)+1;t.lockedUntil=0;t.failedLogins=0;if(db.resetRequests[t.id])db.resetRequests[t.id].status='done';secLog('admin_password_reset',req,t,{actor:req.user.name});saveNow();res.json({ok:true})
 });
 
-// Admin
-app.get('/api/admin/users',auth,admin,(req,res)=>{
-  res.json({users:Object.values(db.users).map(u=>({id:u.id,name:u.name,role:u.role,banned:u.banned,vip:u.vip,cash:u.cash,turns:u.turns,level:u.level,score:score(u)}))});
-});
-app.post('/api/admin/user',auth,admin,(req,res)=>{
-  const t=byId(req.body.id);if(!t)return res.status(404).json({error:'Mängijat ei leitud.'});
-  if(t.role==='owner' && req.user.role!=='owner')return res.status(403).json({error:'Ownerit muuta ei saa.'});
-  const action=req.body.action, amount=Number(req.body.amount)||0;
-  if(action==='cash')t.cash=Math.max(0,t.cash+Math.floor(amount));
-  else if(action==='turns')t.turns=Math.max(0,t.turns+Math.floor(amount));
-  else if(action==='level')t.level=Math.max(1,t.level+Math.floor(amount));
-  else if(action==='vip')t.vip=!t.vip;
-  else if(action==='ban')t.banned=!t.banned;
-  else if(action==='admin' && req.user.role==='owner')t.role=t.role==='admin'?'player':'admin';
-  else return res.status(400).json({error:'Vigane tegevus.'});
-  log('admin',`${req.user.name}: ${action} -> ${t.name} (${amount||''})`,req.user);saveNow();
-  io.to('user:'+t.id).emit('toast','Admin muutis sinu kontot.');
-  res.json({ok:true});
-});
-app.post('/api/admin/settings',auth,admin,(req,res)=>{
-  if(req.body.heistMultiplier!=null)db.settings.heistMultiplier=clamp(Number(req.body.heistMultiplier)||1,1,10);
-  if(req.body.announcement!=null)db.settings.announcement=String(req.body.announcement).slice(0,200);
-  saveNow();io.emit('settings',db.settings);res.json({ok:true,settings:db.settings});
-});
+app.get('/api/admin/ops',auth,admin,(req,res)=>res.json({audit:db.auditLogs.slice(0,300),snapshots:db.snapshots.map(x=>({id:x.id,time:x.time,label:x.label,actor:x.actor})),turnShop:Object.values(db.turnShop),turnOrders:Object.values(db.turnOrders).slice(-200).map(x=>({...x,userName:byId(x.userId)?.name||'?'})),market:{weapon:db.settings.weaponMarket,car:db.settings.carMarket,pressure:db.settings.marketPressure},handbook:true}));
+app.post('/api/admin/turn-pack',auth,admin,(req,res)=>{const x=req.body,id=x.id||String(db.nextIds.turnPack++);db.turnShop[id]={id,name:String(x.name||'Käigupakk').slice(0,50),turns:Math.max(1,Math.floor(+x.turns||500)),price:Math.max(0,Math.floor(+x.price||0)),paymentName:String(x.paymentName||'Kokkuleppel').slice(0,50),paymentInfo:String(x.paymentInfo||'').slice(0,1000),dailyLimit:Math.max(0,Math.floor(+x.dailyLimit||0)),active:x.active!==false,startsAt:+x.startsAt||0,endsAt:+x.endsAt||0,vipOnly:!!x.vipOnly};audit(req.user,'turn_pack_save',id,db.turnShop[id]);saveNow();res.json({ok:true,pack:db.turnShop[id]})});
+app.post('/api/admin/turn-order',auth,admin,(req,res)=>{const o=db.turnOrders[req.body.id],status=req.body.status;if(!o||!['approved','rejected'].includes(status))return res.status(400).json({error:'Vigane tellimus.'});if(o.status!=='pending')return res.status(400).json({error:'Tellimus juba töödeldud.'});o.status=status;o.processedAt=Date.now();o.admin=req.user.name;if(status==='approved'){const u=byId(o.userId);if(u)u.turns+=o.turns}audit(req.user,'turn_order_'+status,o.id,{userId:o.userId,turns:o.turns});saveNow();res.json({ok:true})});
+app.post('/api/admin/gift',auth,admin,(req,res)=>{const x=req.body,cash=Math.max(0,Math.floor(+x.cash||0)),turns=Math.max(0,Math.floor(+x.turns||0)),vipDays=Math.max(0,Math.floor(+x.vipDays||0)),message=String(x.message||'Kingitus VARJURIIK adminilt').slice(0,200);snap('Enne masskingitust',req.user);let n=0;for(const u of Object.values(db.users)){if(u.banned)continue;u.cash+=cash;u.turns+=turns;if(vipDays){u.vip=true;u.vipUntil=Math.max(u.vipUntil||Date.now(),Date.now())+vipDays*86400000}n++;io.to('user:'+u.id).emit('toast',message)}const id=String(db.nextIds.gift++);db.gifts.push({id,time:Date.now(),actor:req.user.name,cash,turns,vipDays,message,count:n});audit(req.user,'gift_all','all',{cash,turns,vipDays,count:n});saveNow();res.json({ok:true,message:`Kingitus saadeti ${n} kasutajale.`})});
+app.post('/api/admin/snapshot',auth,admin,(req,res)=>{const id=snap(req.body.label||'Käsitsi snapshot',req.user);audit(req.user,'snapshot_create',id);saveNow();res.json({ok:true,id})});
+app.post('/api/admin/rollback',auth,admin,(req,res)=>{if(req.user.role!=='owner')return res.status(403).json({error:'Ainult owner saab rollbacki teha.'});const ss=db.snapshots.find(x=>x.id===String(req.body.id));if(!ss)return res.status(404).json({error:'Snapshot puudub.'});const keep=JSON.parse(JSON.stringify(db.snapshots));const restored=JSON.parse(JSON.stringify(ss.data));db=restored;normalize();db.snapshots=keep;audit(req.user,'rollback',ss.id,{label:ss.label});saveNow();io.emit('toast','Serveri seis taastati snapshotist. Logi vajadusel uuesti sisse.');res.json({ok:true})});
+app.post('/api/admin/market',auth,admin,(req,res)=>{snap('Enne turu muutmist',req.user);if(req.body.weapon!=null)db.settings.weaponMarket=clamp(+req.body.weapon,.25,4);if(req.body.car!=null)db.settings.carMarket=clamp(+req.body.car,.25,4);db.settings.marketPressure=0;audit(req.user,'market_set','market',{weapon:db.settings.weaponMarket,car:db.settings.carMarket});saveNow();res.json({ok:true,settings:db.settings})});
+app.post('/api/admin/simulate',auth,admin,(req,res)=>{const mult=clamp(+req.body.multiplier||1,.1,10),users=Object.values(db.users);const totalCash=users.reduce((s,u)=>s+u.cash+u.bank,0),avgScore=users.length?users.reduce((s,u)=>s+score(u),0)/users.length:0;res.json({users:users.length,totalCash,avgScore,currentWeaponMarket:db.settings.weaponMarket,currentCarMarket:db.settings.carMarket,proposalMultiplier:mult,estimatedWeaponPriceChange:(mult-1)*100,warning:mult>1.5||mult<.65?'Suur muudatus – tee enne snapshot.':'Mõõdukas muudatus.'})});
+app.get('/api/admin/handbook',auth,admin,(req,res)=>res.json({sections:[
+['Mängu alus','Käigud: +50 iga 15 min järel kuni loomuliku 3000 piirini. Admini või poest saadud käigud võivad minna üle piiri. Skoor tuleb levelitest, meestest, relvadest, äridest ja krüptost.'],
+['Turvalisus','Paroolid on scrypt-hashitud. Loginil on rate limit ja ajutine konto lukustus. IP, user-agent ja loginid logitakse. Ownerit ei saa bannida. Parooli reset lõpetab vanad sessioonid.'],
+['Maine / Wanted / Vangla','Maine sõltub edukatest tegevustest ja laenukäitumisest. Kuriteod tõstavad wanted taset. Ebaõnnestumine võib viia vangi; välja saab aja või kautsjoniga.'],
+['Majandus','Turuhinnad liiguvad automaatselt ning admin saab relva- ja autoturu kordajat muuta. Hooldused eemaldavad raha majandusest. Pangalaenu default võib vähendada vara/leveleid.'],
+['Admin','Kõik suured adminimuudatused lähevad audit-logisse. Enne masskingitusi ja turu suuri muudatusi tehakse snapshot. Rollback on ainult ownerile. Ban-nupud hoia ohtlikest toimingutest eraldi.'],
+['Käikude pood','Admin määrab paki nime, käigud, hinna, makseviisi ja vabateksti maksejuhendi. Kasutaja teeb tellimuse; käigud lisatakse alles admini kinnitamisel.'],
+['Varikontod','Sama IP ei tõesta varikontot. Vaata koos IP-d, user-agentit, loginiaegu ja majandustehinguid. IP-andmeid näeb ainult admin ning neid ei kuvata avalikult.'],
+['Taastamine','Hoia PostgreSQL püsivana. Tee snapshot enne suuri muudatusi. Rollback taastab mänguseisu; väliseid DB backupe tasub samuti hoida.']
+]}));
+app.post('/api/admin/settings',auth,admin,(req,res)=>{const x=req.body;for(const k of ['heistMultiplier','turnBatch','turnMinutes','maxNaturalTurns','pvpWindowMin','pvpMaxHits','cryptoMin','cryptoMax','marketFee','maintenanceRate'])if(x[k]!=null)db.settings[k]=Number(x[k]);if(x.announcement!=null)db.settings.announcement=String(x.announcement).slice(0,240);saveNow();io.emit('settings',db.settings);res.json({ok:true,settings:db.settings})});
+app.post('/api/admin/lottery',auth,admin,(req,res)=>{const x=req.body,L=db.settings.lottery;Object.assign(L,{active:true,title:String(x.title||'VARJURIIK loos').slice(0,50),ticketPrice:Math.max(1,Math.floor(+x.ticketPrice||10000)),maxTickets:Math.max(1,Math.floor(+x.maxTickets||20)),prize:Math.max(1,Math.floor(+x.prize||1000000)),drawAt:Date.now()+Math.max(1,+x.minutes||60)*60000,tickets:{},winner:null});saveNow();io.emit('settings',db.settings);res.json({ok:true})});
 
-// Socket auth + presence
-const online = new Map();
-io.use((socket,next)=>{
-  const name=verifyToken(socket.handshake.auth?.token);
-  const u=name&&db.users[keyName(name)];
-  if(!u||u.banned)return next(new Error('AUTH'));
-  socket.user=u;next();
-});
-io.on('connection',(socket)=>{
-  online.set(socket.user.id,(online.get(socket.user.id)||0)+1);
-  socket.join('user:'+socket.user.id);
-  io.emit('presence',{online:[...online.keys()]});
-  socket.on('poker:join',(data,cb)=>pokerJoin(socket,data,cb));
-  socket.on('poker:leave',(_,cb)=>pokerLeave(socket,cb));
-  socket.on('poker:start',(_,cb)=>pokerStart(socket,cb));
-  socket.on('poker:action',(data,cb)=>pokerAction(socket,data,cb));
-  socket.on('disconnect',()=>{
-    const n=(online.get(socket.user.id)||1)-1;if(n<=0)online.delete(socket.user.id);else online.set(socket.user.id,n);
-    io.emit('presence',{online:[...online.keys()]});
-  });
-});
-
-// ---------------- Play-money Texas Hold'em ----------------
-const rooms = new Map();
-const SUITS=['♠','♥','♦','♣'], RANKS=[2,3,4,5,6,7,8,9,10,11,12,13,14];
+// Play-money poker
+const rooms=new Map(),SUITS=['♠','♥','♦','♣'],RANKS=[2,3,4,5,6,7,8,9,10,11,12,13,14];
+io.use((s,n)=>{const name=untoken(s.handshake.auth?.token),u=name&&db.users[key(name)];if(!u||u.banned)return n(new Error('AUTH'));s.user=u;n()});
+io.on('connection',s=>{s.join('user:'+s.user.id);s.on('poker:join',(d,cb)=>pJoin(s,d,cb));s.on('poker:leave',(_,cb)=>pLeave(s,cb));s.on('poker:start',(_,cb)=>pStart(s,cb));s.on('poker:action',(d,cb)=>pAction(s,d,cb))});
 function deck(){const d=[];for(const s of SUITS)for(const r of RANKS)d.push({r,s});for(let i=d.length-1;i;i--){const j=rand(0,i);[d[i],d[j]]=[d[j],d[i]]}return d}
-function room(id='main'){if(!rooms.has(id))rooms.set(id,{id,players:[],state:'waiting',dealer:-1,turn:-1,pot:0,currentBet:0,community:[],deck:[],street:'',smallBlind:100,bigBlind:200});return rooms.get(id)}
-function pview(r,uid){
- return {id:r.id,state:r.state,pot:r.pot,currentBet:r.currentBet,community:r.community,street:r.street,turn:r.turn,dealer:r.dealer,
-  players:r.players.map((p,i)=>({id:p.id,name:p.name,chips:p.chips,bet:p.bet,folded:p.folded,allin:p.allin,seat:i,cards:p.id===uid||r.state==='showdown'?p.cards:[]}))}
-}
-function emitRoom(r){for(const p of r.players)io.to('user:'+p.id).emit('poker:state',pview(r,p.id))}
-function pokerJoin(socket,data,cb=()=>{}){
- const u=socket.user,r=room('main');if(r.players.some(p=>p.id===u.id))return cb({ok:true,state:pview(r,u.id)});
- if(r.players.length>=6)return cb({error:'Laud on täis.'});if(r.state!=='waiting')return cb({error:'Käsi juba käib.'});
- const buy=Math.max(10000,Math.min(1000000,Math.floor(Number(data?.buyIn)||100000)));
- if(u.cash<buy)return cb({error:'Buy-in jaoks pole raha.'});u.cash-=buy;r.players.push({id:u.id,name:u.name,chips:buy,cards:[],bet:0,folded:false,allin:false,acted:false});
- saveSoon();emitRoom(r);cb({ok:true,state:pview(r,u.id),user:publicUser(u)});
-}
-function pokerLeave(socket,cb=()=>{}){
- const r=room('main'),i=r.players.findIndex(p=>p.id===socket.user.id);if(i<0)return cb({ok:true});
- if(r.state!=='waiting')return cb({error:'Käe ajal lauast lahkuda ei saa.'});
- socket.user.cash+=r.players[i].chips;r.players.splice(i,1);saveSoon();emitRoom(r);cb({ok:true,user:publicUser(socket.user)});
-}
-function nextActive(r,from){
- if(!r.players.length)return -1;
- for(let k=1;k<=r.players.length;k++){const i=(from+k)%r.players.length,p=r.players[i];if(!p.folded&&!p.allin&&p.chips>0)return i}return -1
-}
-function putBet(r,p,amount){
- const pay=Math.min(p.chips,amount);p.chips-=pay;p.bet+=pay;r.pot+=pay;if(p.chips===0)p.allin=true;
-}
-function pokerStart(socket,cb=()=>{}){
- const r=room('main');if(r.state!=='waiting')return cb({error:'Käsi juba käib.'});if(r.players.length<2)return cb({error:'Vaja vähemalt 2 mängijat.'});
- r.players=r.players.filter(p=>p.chips>0);if(r.players.length<2)return cb({error:'Vähemalt kahel mängijal peab chippe olema.'});
- r.deck=deck();r.community=[];r.pot=0;r.currentBet=r.bigBlind;r.street='preflop';r.state='playing';r.dealer=(r.dealer+1)%r.players.length;
- for(const p of r.players){p.cards=[r.deck.pop(),r.deck.pop()];p.bet=0;p.folded=false;p.allin=false;p.acted=false}
- const sb=(r.dealer+1)%r.players.length,bb=(r.dealer+2)%r.players.length;putBet(r,r.players[sb],r.smallBlind);putBet(r,r.players[bb],r.bigBlind);
- r.turn=nextActive(r,bb);emitRoom(r);cb({ok:true});
-}
-function bettingDone(r){
- const alive=r.players.filter(p=>!p.folded);if(alive.length<=1)return true;
- return alive.every(p=>p.allin || (p.acted && p.bet===r.currentBet));
-}
-function resetStreetBets(r){for(const p of r.players){p.bet=0;p.acted=false}r.currentBet=0}
-function advance(r){
- const alive=r.players.filter(p=>!p.folded);
- if(alive.length===1){finishHand(r,alive[0]);return}
- if(r.street==='preflop'){r.community.push(r.deck.pop(),r.deck.pop(),r.deck.pop());r.street='flop'}
- else if(r.street==='flop'){r.community.push(r.deck.pop());r.street='turn'}
- else if(r.street==='turn'){r.community.push(r.deck.pop());r.street='river'}
- else {showdown(r);return}
- resetStreetBets(r);r.turn=nextActive(r,r.dealer);
- if(r.turn<0)advance(r);
-}
-function pokerAction(socket,data,cb=()=>{}){
- const r=room('main'),i=r.players.findIndex(p=>p.id===socket.user.id);if(r.state!=='playing'||i!==r.turn)return cb({error:'Pole sinu kord.'});
- const p=r.players[i],toCall=Math.max(0,r.currentBet-p.bet),a=data?.action;
- if(a==='fold'){p.folded=true;p.acted=true}
- else if(a==='check'){if(toCall>0)return cb({error:'Peab callima või foldima.'});p.acted=true}
- else if(a==='call'){putBet(r,p,toCall);p.acted=true}
- else if(a==='raise'){let raise=Math.floor(Number(data.amount)||0);if(raise<r.bigBlind)return cb({error:`Min raise ${r.bigBlind}.`});putBet(r,p,toCall+raise);r.currentBet=p.bet;for(const q of r.players)if(q.id!==p.id&&!q.folded&&!q.allin)q.acted=false;p.acted=true}
- else return cb({error:'Vigane tegevus.'});
- if(bettingDone(r))advance(r);else r.turn=nextActive(r,i);
- emitRoom(r);cb({ok:true});
-}
-function bestScore(cards){
- const combos=[];for(let a=0;a<cards.length-4;a++)for(let b=a+1;b<cards.length-3;b++)for(let c=b+1;c<cards.length-2;c++)for(let d=c+1;d<cards.length-1;d++)for(let e=d+1;e<cards.length;e++)combos.push([cards[a],cards[b],cards[c],cards[d],cards[e]]);
- let best=null;for(const c of combos){const s=score5(c);if(!best||cmpScore(s,best)>0)best=s}return best;
-}
-function score5(c){
- const rs=c.map(x=>x.r).sort((a,b)=>b-a), counts={};for(const r of rs)counts[r]=(counts[r]||0)+1;
- const groups=Object.entries(counts).map(([r,n])=>({r:+r,n})).sort((a,b)=>b.n-a.n||b.r-a.r);
- const flush=c.every(x=>x.s===c[0].s);let uniq=[...new Set(rs)];if(uniq[0]===14)uniq.push(1);let highStraight=0;
- for(let i=0;i<=uniq.length-5;i++)if(uniq[i]-uniq[i+4]===4){highStraight=uniq[i];break}
- if(flush&&highStraight)return [8,highStraight];
- if(groups[0].n===4)return [7,groups[0].r,groups[1].r];
- if(groups[0].n===3&&groups[1]?.n===2)return [6,groups[0].r,groups[1].r];
- if(flush)return [5,...rs];
- if(highStraight)return [4,highStraight];
- if(groups[0].n===3)return [3,groups[0].r,...groups.filter(g=>g.n===1).map(g=>g.r).sort((a,b)=>b-a)];
- const pairs=groups.filter(g=>g.n===2).sort((a,b)=>b.r-a.r);
- if(pairs.length>=2)return [2,pairs[0].r,pairs[1].r,groups.find(g=>g.n===1).r];
- if(pairs.length===1)return [1,pairs[0].r,...groups.filter(g=>g.n===1).map(g=>g.r).sort((a,b)=>b-a)];
- return [0,...rs];
-}
-function cmpScore(a,b){for(let i=0;i<Math.max(a.length,b.length);i++){const d=(a[i]||0)-(b[i]||0);if(d)return d}return 0}
-function showdown(r){
- r.state='showdown';const alive=r.players.filter(p=>!p.folded);let best=null,w=[];
- for(const p of alive){p.hand=bestScore([...p.cards,...r.community]);if(!best||cmpScore(p.hand,best)>0){best=p.hand;w=[p]}else if(cmpScore(p.hand,best)===0)w.push(p)}
- const share=Math.floor(r.pot/w.length);for(const p of w){p.chips+=share;const u=byId(p.id);if(u)u.stats.pokerWins++}
- r.pot-=share*w.length;if(r.pot>0)w[0].chips+=r.pot;r.pot=0;emitRoom(r);
- setTimeout(()=>{r.state='waiting';r.street='';r.community=[];r.currentBet=0;r.turn=-1;for(const p of r.players){p.cards=[];p.bet=0;p.folded=false;p.allin=false;p.acted=false}emitRoom(r);saveSoon()},5000);
-}
-function finishHand(r,winner){winner.chips+=r.pot;r.pot=0;r.state='showdown';emitRoom(r);setTimeout(()=>{r.state='waiting';r.community=[];r.street='';r.turn=-1;for(const p of r.players){p.cards=[];p.bet=0;p.folded=false;p.allin=false;p.acted=false}emitRoom(r)},3000)}
+function room(){if(!rooms.has('main'))rooms.set('main',{players:[],state:'waiting',dealer:-1,turn:-1,pot:0,currentBet:0,community:[],deck:[],street:'',sb:100,bb:200});return rooms.get('main')}
+function pview(r,uid){return{state:r.state,pot:r.pot,currentBet:r.currentBet,community:r.community,street:r.street,turn:r.turn,players:r.players.map((p,i)=>({id:p.id,name:p.name,chips:p.chips,bet:p.bet,folded:p.folded,allin:p.allin,seat:i,cards:p.id===uid||r.state==='showdown'?p.cards:[]}))}}
+function emitP(r){for(const p of r.players)io.to('user:'+p.id).emit('poker:state',pview(r,p.id))}
+function pJoin(s,d,cb=()=>{}){const u=s.user,r=room();if(r.players.some(p=>p.id===u.id))return cb({ok:true,state:pview(r,u.id)});if(r.players.length>=6||r.state!=='waiting')return cb({error:'Laud täis või käsi käib.'});const buy=clamp(Math.floor(+d?.buyIn||100000),10000,5000000);if(u.cash<buy)return cb({error:'Raha puudub.'});u.cash-=buy;r.players.push({id:u.id,name:u.name,chips:buy,cards:[],bet:0,folded:false,allin:false,acted:false});saveSoon();emitP(r);cb({ok:true,state:pview(r,u.id),user:pub(u)})}
+function pLeave(s,cb=()=>{}){const r=room(),i=r.players.findIndex(p=>p.id===s.user.id);if(i<0)return cb({ok:true});if(r.state!=='waiting')return cb({error:'Käe ajal lahkuda ei saa.'});s.user.cash+=r.players[i].chips;r.players.splice(i,1);saveSoon();emitP(r);cb({ok:true,user:pub(s.user)})}
+function nextA(r,f){for(let k=1;k<=r.players.length;k++){const i=(f+k)%r.players.length,p=r.players[i];if(!p.folded&&!p.allin&&p.chips>0)return i}return-1}
+function bet(r,p,a){const x=Math.min(p.chips,a);p.chips-=x;p.bet+=x;r.pot+=x;if(!p.chips)p.allin=true}
+function pStart(s,cb=()=>{}){const r=room();if(r.state!=='waiting'||r.players.length<2)return cb({error:'Vaja vähemalt 2 mängijat.'});r.deck=deck();r.community=[];r.pot=0;r.currentBet=r.bb;r.street='preflop';r.state='playing';r.dealer=(r.dealer+1)%r.players.length;for(const p of r.players){p.cards=[r.deck.pop(),r.deck.pop()];p.bet=0;p.folded=false;p.allin=false;p.acted=false}const sb=(r.dealer+1)%r.players.length,bb=(r.dealer+2)%r.players.length;bet(r,r.players[sb],r.sb);bet(r,r.players[bb],r.bb);r.turn=nextA(r,bb);emitP(r);cb({ok:true})}
+function bettingDone(r){const a=r.players.filter(p=>!p.folded);return a.length<=1||a.every(p=>p.allin||(p.acted&&p.bet===r.currentBet))}
+function resetB(r){for(const p of r.players){p.bet=0;p.acted=false}r.currentBet=0}
+function advance(r){const a=r.players.filter(p=>!p.folded);if(a.length===1)return finish(r,a);if(r.street==='preflop'){r.community.push(r.deck.pop(),r.deck.pop(),r.deck.pop());r.street='flop'}else if(r.street==='flop'){r.community.push(r.deck.pop());r.street='turn'}else if(r.street==='turn'){r.community.push(r.deck.pop());r.street='river'}else return showdown(r);resetB(r);r.turn=nextA(r,r.dealer);if(r.turn<0)advance(r)}
+function pAction(s,d,cb=()=>{}){const r=room(),i=r.players.findIndex(p=>p.id===s.user.id);if(r.state!=='playing'||i!==r.turn)return cb({error:'Pole sinu kord.'});const p=r.players[i],call=Math.max(0,r.currentBet-p.bet),a=d?.action;if(a==='fold'){p.folded=true;p.acted=true}else if(a==='check'){if(call)return cb({error:'Peab callima.'});p.acted=true}else if(a==='call'){bet(r,p,call);p.acted=true}else if(a==='raise'){const x=Math.floor(+d.amount||0);if(x<r.bb)return cb({error:`Min raise ${r.bb}`});bet(r,p,call+x);r.currentBet=p.bet;for(const q of r.players)if(q!==p&&!q.folded&&!q.allin)q.acted=false;p.acted=true}else return cb({error:'Vigane tegevus.'});if(bettingDone(r))advance(r);else r.turn=nextA(r,i);emitP(r);cb({ok:true})}
+function score5(c){const rs=c.map(x=>x.r).sort((a,b)=>b-a),co={};for(const r of rs)co[r]=(co[r]||0)+1;const g=Object.entries(co).map(([r,n])=>({r:+r,n})).sort((a,b)=>b.n-a.n||b.r-a.r),fl=c.every(x=>x.s===c[0].s),u=[...new Set(rs)];if(u[0]===14)u.push(1);let st=0;for(let i=0;i<=u.length-5;i++)if(u[i]-u[i+4]===4){st=u[i];break}if(fl&&st)return[8,st];if(g[0].n===4)return[7,g[0].r,g[1].r];if(g[0].n===3&&g[1]?.n===2)return[6,g[0].r,g[1].r];if(fl)return[5,...rs];if(st)return[4,st];if(g[0].n===3)return[3,g[0].r,...g.filter(x=>x.n===1).map(x=>x.r).sort((a,b)=>b-a)];const p=g.filter(x=>x.n===2).sort((a,b)=>b.r-a.r);if(p.length>=2)return[2,p[0].r,p[1].r,g.find(x=>x.n===1).r];if(p.length===1)return[1,p[0].r,...g.filter(x=>x.n===1).map(x=>x.r).sort((a,b)=>b-a)];return[0,...rs]}
+function cmp(a,b){for(let i=0;i<Math.max(a.length,b.length);i++){const d=(a[i]||0)-(b[i]||0);if(d)return d}return 0}
+function best(cs){let b=null;for(let a=0;a<cs.length-4;a++)for(let c=a+1;c<cs.length-3;c++)for(let d=c+1;d<cs.length-2;d++)for(let e=d+1;e<cs.length-1;e++)for(let f=e+1;f<cs.length;f++){const s=score5([cs[a],cs[c],cs[d],cs[e],cs[f]]);if(!b||cmp(s,b)>0)b=s}return b}
+function showdown(r){r.state='showdown';const a=r.players.filter(p=>!p.folded);let bs=null,w=[];for(const p of a){const s=best([...p.cards,...r.community]);if(!bs||cmp(s,bs)>0){bs=s;w=[p]}else if(cmp(s,bs)===0)w.push(p)}finish(r,w)}
+function finish(r,w){const share=Math.floor(r.pot/w.length);for(const p of w){p.chips+=share;const u=byId(p.id);if(u)u.stats.pokerWins++}r.pot=0;r.state='showdown';emitP(r);setTimeout(()=>{r.state='waiting';r.community=[];r.street='';r.turn=-1;for(const p of r.players){p.cards=[];p.bet=0;p.folded=false;p.allin=false;p.acted=false}emitP(r);saveSoon()},4000)}
 
-setInterval(()=>{for(const u of Object.values(db.users))refresh(u);saveSoon()},10000);
-
-server.listen(PORT,()=>console.log(`VARJURIIK ONLINE running on :${PORT}`));
+function updateMarket(){if(Date.now()<db.settings.marketNext)return;const pressure=Math.min(1,Math.abs(db.settings.marketPressure||0)/5000),dir=(Math.random()-.5)*.10+(db.settings.marketPressure>0?.015*pressure:0);db.settings.weaponMarket=clamp(db.settings.weaponMarket*(1+dir),.65,1.65);db.settings.carMarket=clamp(db.settings.carMarket*(1+(Math.random()-.5)*.08),.7,1.5);db.settings.marketPressure=Math.floor((db.settings.marketPressure||0)*.25);db.settings.marketNext=Date.now()+900000;io.emit('settings',db.settings);saveSoon()}
+function decayWanted(){for(const u of Object.values(db.users)){if(u.wanted>0&&Math.random()<.25)u.wanted--;if(u.vipUntil&&u.vipUntil<Date.now()){u.vip=false;u.vipUntil=0}if(u.insurance?.active&&u.insurance.until<Date.now())u.insurance.active=false}}
+setInterval(()=>{updateCrypto();updateMarket();drawLottery();settleLoans();for(const u of Object.values(db.users))refresh(u)},15000);setInterval(decayWanted,15*60000);
+(async()=>{await initStorage();if(OWNER_PASSWORD&&!db.users[key(OWNER_USERNAME)]){db.users[key(OWNER_USERNAME)]=newUser(OWNER_USERNAME,OWNER_PASSWORD,'owner');await saveNow()}server.listen(PORT,()=>console.log(`VARJURIIK v3 running on ${PORT}`))})().catch(e=>{console.error(e);process.exit(1)});

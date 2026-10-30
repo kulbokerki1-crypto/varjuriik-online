@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="et"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VARJURIIK ONLINE</title>
+<style>
+:root{--bg:#090c12;--p:#141a25;--p2:#0f1520;--line:#293247;--txt:#eef3ff;--mut:#9aa7bd;--g:#58e19a;--r:#ff6474;--y:#ffd166;--b:#71a7ff}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#1b2740,#090c12 42%);color:var(--txt);font:15px system-ui,-apple-system,Segoe UI,sans-serif}button,input,select{font:inherit}button{cursor:pointer}
+.wrap{max-width:1200px;margin:auto;padding:12px}.top{display:flex;justify-content:space-between;align-items:center;gap:10px}.brand{font-size:24px;font-weight:1000;letter-spacing:.12em}.brand i{font-style:normal;color:var(--g)}
+.pills{display:flex;gap:6px;flex-wrap:wrap}.pill,.badge{border:1px solid var(--line);background:#101724;padding:6px 9px;border-radius:999px}
+.layout{display:grid;grid-template-columns:220px 1fr;gap:12px;margin-top:12px}.side,.card{background:linear-gradient(180deg,#171e2b,#10151f);border:1px solid var(--line);border-radius:15px}.side{padding:8px;height:max-content;position:sticky;top:8px}.nav{display:grid;gap:5px}.nav button{background:transparent;border:0;color:#cbd5e1;text-align:left;padding:10px;border-radius:9px}.nav button.active,.nav button:hover{background:#263149;color:#fff}
+.card{padding:15px}.page{display:none}.page.active{display:block}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.stat{background:#0c121d;border:1px solid #283147;border-radius:11px;padding:11px}.stat b{display:block;font-size:18px}
+.btn{border:1px solid #394760;background:#253149;color:#fff;padding:9px 11px;border-radius:9px}.btn.good{background:#18523c}.btn.bad{background:#5b262e}.btn.gold{background:#604a18}.actions{display:flex;gap:7px;flex-wrap:wrap}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #273044}.row:last-child{border:0}.mut{color:var(--mut)}.money{color:var(--y)}.green{color:var(--g)}.red{color:var(--r)}
+input,select{width:100%;background:#0d1320;color:white;border:1px solid #34415c;border-radius:9px;padding:9px}.form{display:grid;grid-template-columns:1fr auto;gap:8px}
+table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #273044;text-align:left}th{color:var(--mut)}.scroll{overflow:auto}.hero{padding:20px}.hero h1{margin:0;font-size:30px}.notice{background:#111c2a;border:1px solid #2d405e;padding:10px;border-radius:9px;margin:10px 0}
+.auth{max-width:430px;margin:8vh auto}.auth .card{padding:22px}.tabs{display:flex;gap:6px;margin-bottom:12px}.tabs button{flex:1}.toast{position:fixed;right:12px;bottom:12px;max-width:340px;background:#202b3f;border:1px solid #44536e;border-radius:10px;padding:11px;display:none;z-index:9}
+.cards{display:flex;gap:5px;flex-wrap:wrap}.playing{font-size:22px;background:white;color:#111;padding:6px 8px;border-radius:6px;min-width:42px;text-align:center}.heart,.diamond{color:#c22}
+.poker-player{border:1px solid #2d3850;padding:9px;border-radius:10px;margin:6px 0}.turn{outline:2px solid var(--g)}.owner{color:var(--y);font-weight:800}
+@media(max-width:760px){.layout{grid-template-columns:1fr}.side{position:static}.nav{grid-template-columns:repeat(4,1fr)}.nav button{text-align:center;font-size:12px;padding:8px 2px}.grid,.stats{grid-template-columns:1fr 1fr}.top{align-items:flex-start;flex-direction:column}}
+@media(max-width:450px){.grid,.stats{grid-template-columns:1fr}.brand{font-size:21px}}
+</style></head><body>
+<div id="auth" class="auth wrap">
+ <div class="card"><div class="brand">VARJU<i>RIIK</i></div><p class="mut">Online multiplayer</p>
+  <div class="tabs"><button class="btn good" onclick="authMode='login';drawAuth()">Logi sisse</button><button class="btn" onclick="authMode='register';drawAuth()">Loo konto</button></div>
+  <div id="authFields"></div><div id="authErr" class="red" style="margin-top:8px"></div>
+ </div>
+</div>
+<div id="game" class="wrap" style="display:none">
+ <div class="top"><div><div class="brand">VARJU<i>RIIK</i></div><div id="announcement" class="mut"></div></div><div class="pills"><span class="pill">💵 <b id="topCash"></b></span><span class="pill">⚡ <b id="topTurns"></b></span><span class="pill">❤️ <b id="topHp"></b></span></div></div>
+ <div class="layout"><aside class="side"><div id="nav" class="nav"></div><button class="btn bad" style="width:100%;margin-top:9px" onclick="logout()">Logi välja</button></aside>
+ <main>
+  <section class="page active" id="p-home"><div class="card hero"><div class="mut">Mängija</div><h1 id="name"></h1><div>Level <b id="lvl"></b> · Skoor <b id="score"></b> · Maine <b id="rep"></b></div></div>
+   <div class="stats" style="margin-top:12px"><div class="stat">Sularaha<b id="cash"></b></div><div class="stat">Pangas<b id="bank"></b></div><div class="stat">Jõud<b id="power"></b></div><div class="stat">Mafioosod<b id="mafia"></b></div></div>
+   <div class="grid" style="margin-top:12px"><div class="card"><h2>Kiirtegevused</h2><div class="actions"><button class="btn good" onclick="post('/api/train')">🏋️ Treeni</button><button class="btn" onclick="post('/api/recruit',{n:10})">🕴️ Värba 10</button></div></div><div class="card"><h2>Varustus</h2><div class="row"><span>Relv</span><b id="weapon"></b></div><div class="row"><span>Kinnisvara</span><b id="property"></b></div></div></div>
+  </section>
+  <section class="page" id="p-crime"><div class="card"><h2>💰 Röövid</h2><div id="crimes"></div></div></section>
+  <section class="page" id="p-pvp"><div class="card"><h2>⚔️ Teised mängijad</h2><p class="mut">Röövimine maksab 20 käiku. Sama ründaja cooldown on 60 sekundit.</p><div class="scroll" id="players"></div></div></section>
+  <section class="page" id="p-market"><div class="grid"><div class="card"><h2>🔫 Relvad</h2><div id="weapons"></div></div><div class="card"><h2>🏢 Kinnisvara</h2><div id="properties"></div></div></div></section>
+  <section class="page" id="p-bank"><div class="card"><h2>🏦 Pank</h2><div class="form"><input id="bankAmount" type="number" placeholder="Summa"><button class="btn good" onclick="bank('in')">Panka</button></div><button class="btn" style="margin-top:8px" onclick="bank('out')">Võta välja</button></div></section>
+  <section class="page" id="p-poker"><div class="grid"><div class="card"><h2>♠ Live Texas Hold'em</h2><p class="mut">Ainult mängusisene raha. 2–6 mängijat.</p><div id="pokerJoin"><input id="buyIn" type="number" value="100000"><button class="btn good" style="margin-top:8px" onclick="joinPoker()">Istu lauda</button></div><div id="pokerControls" style="display:none"><div class="actions"><button class="btn" onclick="pokerStart()">Alusta kätt</button><button class="btn bad" onclick="leavePoker()">Lahku lauast</button></div></div><div id="pokerMsg" class="mut" style="margin-top:8px"></div></div>
+   <div class="card"><h2>Laud</h2><div>Pot: <b id="pot">0 €</b> · Panus: <b id="currentBet">0 €</b></div><div class="cards" id="community" style="margin:10px 0"></div><div id="pokerPlayers"></div><div id="myCards" class="cards" style="margin-top:10px"></div><div id="betActions" class="actions" style="margin-top:10px"></div></div></div>
+  </section>
+  <section class="page" id="p-ranking"><div class="card"><h2>🏆 Edetabel</h2><div id="ranking"></div></div></section>
+  <section class="page" id="p-admin"><div class="grid"><div class="card"><h2>👑 Owner/Admin</h2><div class="notice">Need nupud töötavad ainult owner/admin kontoga. Õigusi kontrollib server.</div><div class="form"><input id="announce" placeholder="Teade kõigile"><button class="btn" onclick="adminSettings()">Saada</button></div><div class="row"><span>Röövide kordaja</span><select id="mult"><option>1</option><option>2</option><option>3</option><option>5</option><option>10</option></select></div><button class="btn gold" onclick="adminSettings()">Salvesta event</button></div><div class="card"><h2>Mängijad</h2><div id="adminUsers" class="scroll"></div></div></div></section>
+ </main></div>
+</div>
+<div id="toast" class="toast"></div>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+let token=localStorage.vr_token||'',me=null,cfg=null,socket=null,poker=null,authMode='login';
+const fmt=n=>new Intl.NumberFormat('et-EE',{maximumFractionDigits:0}).format(Math.floor(n||0))+' €';
+const num=n=>new Intl.NumberFormat('et-EE',{maximumFractionDigits:0}).format(Math.floor(n||0));
+function toast(x){let t=document.getElementById('toast');t.textContent=x;t.style.display='block';clearTimeout(t._x);t._x=setTimeout(()=>t.style.display='none',3500)}
+function drawAuth(){document.getElementById('authFields').innerHTML=`<input id="an" placeholder="Mängijanimi"><input id="ap" type="password" placeholder="Parool" style="margin-top:8px"><button class="btn good" style="width:100%;margin-top:10px" onclick="doAuth()">${authMode==='login'?'Logi sisse':'Loo konto'}</button>`}
+drawAuth();
+async function api(url,opt={}){opt.headers={...(opt.headers||{}),'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})};let r=await fetch(url,opt);let j=await r.json().catch(()=>({error:'Serveri viga'}));if(!r.ok)throw new Error(j.error||'Viga');return j}
+async function doAuth(){try{let j=await api('/api/'+authMode,{method:'POST',body:JSON.stringify({name:an.value,password:ap.value})});token=j.token;localStorage.vr_token=token;await start()}catch(e){authErr.textContent=e.message}}
+function logout(){localStorage.removeItem('vr_token');location.reload()}
+async function start(){try{cfg=await api('/api/config');let j=await api('/api/me');me=j.user;document.getElementById('auth').style.display='none';document.getElementById('game').style.display='block';setupNav();connectSocket();render();loadPlayers()}catch(e){if(token){localStorage.removeItem('vr_token')}document.getElementById('auth').style.display='block'}}
+const pages=[['home','🏠','Avaleht'],['crime','💰','Röövid'],['pvp','⚔️','Mängijad'],['market','🛒','Turg'],['bank','🏦','Pank'],['poker','♠','Pokker'],['ranking','🏆','TOP']];
+function setupNav(){let p=[...pages];if(['owner','admin'].includes(me.role))p.push(['admin','👑','Admin']);nav.innerHTML=p.map((x,i)=>`<button class="${i?'':'active'}" data-p="${x[0]}" onclick="go('${x[0]}')">${x[1]} ${x[2]}</button>`).join('')}
+function go(x){document.querySelectorAll('.page').forEach(e=>e.classList.remove('active'));document.getElementById('p-'+x).classList.add('active');document.querySelectorAll('.nav button').forEach(e=>e.classList.toggle('active',e.dataset.p===x));if(x==='pvp'||x==='ranking')loadPlayers();if(x==='admin')loadAdmin()}
+async function refresh(){let j=await api('/api/me');me=j.user;cfg.settings=j.settings;render()}
+async function post(url,data={}){try{let j=await api(url,{method:'POST',body:JSON.stringify(data)});me=j.user;toast(j.message||'Tehtud');render();return j}catch(e){toast(e.message)}}
+function render(){topCash.textContent=fmt(me.cash);topTurns.textContent=num(me.turns);topHp.textContent=Math.floor(me.hp)+'%';name.textContent=me.name+(me.role==='owner'?' 👑':'')+(me.vip?' ⭐':'');lvl.textContent=me.level;score.textContent=num(me.score);rep.textContent=num(me.rep);cash.textContent=fmt(me.cash);bank.textContent=fmt(me.bank);power.textContent=num(me.power);mafia.textContent=num(me.mafia);weapon.textContent=me.weaponName;property.textContent=me.propertyName;announcement.textContent=cfg.settings?.announcement||'';
+ crimes.innerHTML=cfg.crimes.map(c=>`<div class="row"><div><b>${c.name}</b><div class="mut">${c.turns} käiku · ${fmt(c.min)}–${fmt(c.max)}</div></div><button class="btn bad" onclick="post('/api/crime',{id:'${c.id}'})">Tee</button></div>`).join('');
+ weapons.innerHTML=cfg.weapons.map((w,i)=>`<div class="row"><div><b>${w.name}</b><div class="mut">Võimsus +${num(w.power)}</div></div>${i<=me.weapon?'<span class="badge">OMATUD</span>':`<button class="btn" onclick="post('/api/buy',{type:'weapon',index:${i}})">${fmt(w.price)}</button>`}</div>`).join('');
+ properties.innerHTML=cfg.properties.map((p,i)=>`<div class="row"><div><b>${p.name}</b><div class="mut">Skoor +${num(p.score)}</div></div>${i<=me.property?'<span class="badge">OMATUD</span>':`<button class="btn" onclick="post('/api/buy',{type:'property',index:${i}})">${fmt(p.price)}</button>`}</div>`).join('');
+}
+async function bank(dir){await post('/api/bank',{dir,amount:+bankAmount.value})}
+let onlineIds=[];
+async function loadPlayers(){try{let j=await api('/api/players');let ps=j.players;players.innerHTML='<table><tr><th>Mängija</th><th>Lvl</th><th>Skoor</th><th></th></tr>'+ps.filter(x=>x.id!==me.id).map(x=>`<tr><td>${x.online?'🟢':'⚫'} ${x.vip?'⭐ ':''}${x.name}</td><td>${x.level}</td><td>${num(x.score)}</td><td><button class="btn bad" onclick="rob('${x.id}')">Röövi</button></td></tr>`).join('')+'</table>';ranking.innerHTML='<table><tr><th>#</th><th>Mängija</th><th>Level</th><th>Skoor</th></tr>'+ps.map((x,i)=>`<tr><td>${i+1}</td><td>${x.online?'🟢':'⚫'} ${x.vip?'⭐ ':''}${x.name}</td><td>${x.level}</td><td>${num(x.score)}</td></tr>`).join('')+'</table>'}catch(e){}}
+async function rob(id){await post('/api/rob-player',{targetId:id});loadPlayers()}
+function connectSocket(){socket=io({auth:{token}});socket.on('toast',x=>{toast(x);refresh()});socket.on('settings',x=>{cfg.settings=x;render()});socket.on('presence',()=>loadPlayers());socket.on('poker:state',x=>{poker=x;renderPoker()});socket.on('connect_error',()=>toast('Live ühendus katkes.'))}
+function joinPoker(){socket.emit('poker:join',{buyIn:+buyIn.value},x=>{if(x.error)return toast(x.error);poker=x.state;me=x.user;render();renderPoker()})}
+function leavePoker(){socket.emit('poker:leave',{},x=>{if(x.error)return toast(x.error);poker=null;me=x.user;render();renderPoker()})}
+function pokerStart(){socket.emit('poker:start',{},x=>{if(x.error)toast(x.error)})}
+function act(action,amount=0){socket.emit('poker:action',{action,amount},x=>{if(x.error)toast(x.error)})}
+function card(c){let cls=(c.s==='♥'?'heart':c.s==='♦'?'diamond':'');let r={11:'J',12:'Q',13:'K',14:'A'}[c.r]||c.r;return `<span class="playing ${cls}">${r}${c.s}</span>`}
+function renderPoker(){let joined=!!poker?.players?.some(x=>x.id===me.id);pokerJoin.style.display=joined?'none':'block';pokerControls.style.display=joined?'block':'none';if(!poker){community.innerHTML='';pokerPlayers.innerHTML='<div class="mut">Istu lauda, et live seisu näha.</div>';myCards.innerHTML='';betActions.innerHTML='';return}pot.textContent=fmt(poker.pot);currentBet.textContent=fmt(poker.currentBet);community.innerHTML=poker.community.map(card).join('');pokerPlayers.innerHTML=poker.players.map((p,i)=>`<div class="poker-player ${poker.turn===i?'turn':''}"><b>${p.name}</b> · ${fmt(p.chips)} ${p.folded?'· FOLD':''} ${p.allin?'· ALL-IN':''}<div class="mut">Panus ${fmt(p.bet)}</div></div>`).join('');let mine=poker.players.find(x=>x.id===me.id);myCards.innerHTML=mine?.cards?.map(card).join('')||'';let myTurn=poker.state==='playing'&&poker.players[poker.turn]?.id===me.id;betActions.innerHTML=myTurn?`<button class="btn bad" onclick="act('fold')">Fold</button><button class="btn" onclick="act('check')">Check</button><button class="btn good" onclick="act('call')">Call</button><button class="btn gold" onclick="let a=prompt('Raise summa','200');act('raise',+a)">Raise</button>`:''}
+async function loadAdmin(){try{let j=await api('/api/admin/users');adminUsers.innerHTML='<table><tr><th>Mängija</th><th>Raha</th><th>Tegevus</th></tr>'+j.users.map(u=>`<tr><td>${u.name}<div class="mut">${u.role} · L${u.level}</div></td><td>${fmt(u.cash)}</td><td><button class="btn" onclick="adm('${u.id}','cash',1000000)">+1M</button> <button class="btn" onclick="adm('${u.id}','turns',1000)">+1000⚡</button> <button class="btn gold" onclick="adm('${u.id}','vip')">VIP</button> <button class="btn bad" onclick="adm('${u.id}','ban')">Ban</button>${me.role==='owner'?` <button class="btn" onclick="adm('${u.id}','admin')">Admin</button>`:''}</td></tr>`).join('')+'</table>'}catch(e){toast(e.message)}}
+async function adm(id,action,amount=0){try{await api('/api/admin/user',{method:'POST',body:JSON.stringify({id,action,amount})});loadAdmin()}catch(e){toast(e.message)}}
+async function adminSettings(){try{let j=await api('/api/admin/settings',{method:'POST',body:JSON.stringify({announcement:announce.value,heistMultiplier:+mult.value})});cfg.settings=j.settings;render();toast('Serveri seaded salvestatud.')}catch(e){toast(e.message)}}
+if(token)start();
+setInterval(()=>{if(me)refresh()},5000);
+</script></body></html>

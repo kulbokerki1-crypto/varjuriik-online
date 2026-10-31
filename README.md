@@ -77,3 +77,11 @@ Kui `/var/data` on mountitud, tuvastab V6.3 selle automaatselt. Serveri logisse 
 Alates V6.5-st peavad versiooniuuendused säilitama kõik olemasolevate mängijate andmed. Uuendus ei tohi nullida ega algväärtustega üle kirjutada mängija levelit, XP-d, skoori, sularaha, pangaraha, relvi, vara, autosid, haridust, töökohta, kampa, statistikat ega muud progressi. Uued väljad lisatakse migratsiooniga olemasolevate andmete kõrvale.
 
 Relvade hinnad on V6.5-s normaliseeritud: baashinnad on 6 000–88 000 € ning vana andmebaasi relvahinna override'id eemaldatakse ühe korra migratsiooni käigus. Relva ostuhinda ei korrutata enam üldise majanduse ega relvaturu kordajaga.
+
+
+## V6.7 autoturu uuendus
+- Minu andmed lehel kuvatakse Rünnak ja Turve/Kaitse.
+- Autode turuväärtus liigub koos autoturu kordajaga; hea ostu ja hilisema hinnatõusu korral saab autoga kasumit teenida.
+- Müüki pandud auto kontrollib NPC 2–15 minuti jooksul. Kui küsitud hind on turu suhtes mõistlik, ostab NPC auto ära. Kui hind on liiga kõrge, teeb NPC oma ostupakkumise.
+- NPC pakkumise saab vastu võtta või tagasi lükata; kuulutuse saab ka müügist eemaldada.
+- Olemasolevate mängijate progressiandmeid see uuendus ei nulli.

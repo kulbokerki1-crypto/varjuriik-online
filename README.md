@@ -114,3 +114,11 @@ Relvade hinnad on V6.5-s normaliseeritud: baashinnad on 6 000–88 000 € ning 
 - Automüügi teenustasu on 8% ja läheb mängu keskpanka.
 - NPC autokasum varieerub: mõnel autol väiksem, enamasti 10–25%, harva võib olla suurem.
 - Röövide ja PvP kindlustushüvitised kantakse otse mängija pangakontole, mitte sularahasse.
+
+
+## V6.15 – e-maili kaudu parooli taastamine
+- Kasutaja saab taastamist alustada kasutajanime või e-mailiga.
+- Resendi kaudu saadetakse ühekordne taastamislink, mis kehtib 30 minutit.
+- Pärast edukat paroolivahetust vanad sessioonid aeguvad (`sessionVersion`).
+- Admini käsitsi parooli muutmine jääb varuvariandiks.
+- Render Environment: `RESEND_API_KEY`, `EMAIL_FROM`, `PUBLIC_URL`. SMTP seaded jäävad varuvariandiks.

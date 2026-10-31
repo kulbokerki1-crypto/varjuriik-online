@@ -1,37 +1,34 @@
-# VARJURIIK v4 — multiplayer mafia/economy game
+# VARJURIIK v5 COMPLETE
 
-VARJURIIK v4 is the new beta base for the game. It is intended for deployment on Render with PostgreSQL persistence.
+Koondversioon pärast V5 beetat.
 
-## Included now
+## Olulisemad süsteemid
+- PostgreSQL püsiv andmebaas Renderis (`DATABASE_URL`)
+- Uus konto algab 0 skoorist
+- Maffia 300 + turva 300 + kinnisvara 100 = ~438 miljardit leveliskoori; kasv on tugevalt tagant raskem
+- Mafiooso/turva 110 skoori tk; tavarelv 110, raskekuulipilduja 11M, sõjaväe arsenal 77M tk
+- Mafiooso, turva ja relva ost = 5 käiku tk
+- PvP deterministlik: Attack peab olema rangelt suurem kui Defense; owner/admin kaitstud
+- Haridus: 9k + 14k + 22k + 40k + 65k + 100k käiku; progress salvestub
+- Põhikool avab mängijapanga; isikliku panga max limiit haridusest kuni 1T
+- Krüpto ostulimiit: 1000 hetkeskoori = 1 krüpto
+- 100 nimetatud kinnisvarataset: Vana puukuur -> VARJURIIGI PALEE
+- Ettevõtted: töötajad, valdkonnapõhised projektid, käigukulu, kestus ja ärimaks
+- Autodiiler + NPC ostud
+- Wanted/vangla piirangud + enda/teise mängija kautsjon
+- Kindlustus Basic/Standard/Premium/Elite; osaline katvus, omavastutus, admini seaded
+- Bounty: 25% vaikimisi teenustasu, mitme rünnaku tingimus, admin saab määra muuta
+- Luurekeskus: Soome/Ukraina/Vene agendid, 25 käiku, 1 katse sihtmärgi kohta 15 min
+- Teiste mängijate profiilid, privaatpostkast, teavitused
+- Isiklik ihukaitsja: teine mängija, leping, 50/50 makse vaikimisi, Defense boonus
+- Kambad: fond, annetused, rünnakud/võidud/kaotused, juht/abijuht/liige, rahalised preemiad
+- Mängu keskpank: süsteemitasud/maksud, owner saab saata või likvideerida raha
+- Admin: kasutajanime muutmine, reset kasutaja/kõik, snapshot/rollback, audit, turu/tasude/relvahindade/kindlustuse muutmine
+- Põhjalikum owner/admin käsiraamat
 
-- Accounts, hashed passwords, session invalidation and owner/admin roles
-- Login rate limiting, temporary account lock, IP + user-agent login/security logs
-- Optional e-mail password reset through SMTP plus admin temporary-password reset
-- Persistent PostgreSQL game state when `DATABASE_URL` is configured
-- Turns: configurable batch/interval, natural cap, admin-added turns may exceed cap
-- Mafia/security to level 300, property to level 100, education and bank limits
-- Weapons, troops, PvP limits, gang points, unprotected excess weapons
-- Player banks, configurable loans and automatic default liquidation
-- Businesses, car dealership/market, travel, maintenance costs
-- Dynamic weapon/car market multipliers and admin market controls
-- Crypto, lottery, global chat and play-money live Hold'em beta
-- Wanted level, jail/bail, reputation and insurance
-- Secret operations and player bounties
-- Player profile privacy controls and expanded statistics
-- Admin turn shop: custom package name, turns, price, payment method, free-text payment instructions, manual approve/reject
-- Admin gifts to all active users (cash/turns/VIP days + message)
-- Admin audit log, snapshots, owner-only rollback and economy simulation
-- Admin security view for shared IP risk signals and password reset requests
-- Owner/admin-only game-master handbook
+## Deploy
+Render Web Service kasutab Node 20+ ja käivituskäsku `npm start`.
+Püsiva andmebaasi jaoks määra Render Environmentis `DATABASE_URL` PostgreSQL Internal Database URL-iks.
 
-## Important deployment variables
-
-Copy `.env.example` values into Render environment variables. For persistent accounts/progress, configure `DATABASE_URL` from Render Postgres. Set a strong `OWNER_PASSWORD` and `TOKEN_SECRET`.
-
-For e-mail password reset, also set `PUBLIC_URL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and optionally `SMTP_FROM`. If SMTP is not configured, a reset request still appears to admins and an admin can assign a temporary password.
-
-## Notes
-
-This is a large working beta, not a finished audited production platform. The current storage model keeps the whole game state in one PostgreSQL JSONB row, which is fine for early testing but should later be migrated to relational tables for larger player counts. Login throttling is in-memory, so for multiple web instances a shared Redis-style limiter would be better. Poker still does not implement full side-pot/reconnect handling.
-
-Before public launch, run a dedicated security review, enable Render HTTPS, configure database backups, and test restores/rollback with a staging database.
+## Märkus
+Süntaksikontroll on tehtud `node --check` abil. Täielik Render runtime-test tuleb teha pärast deploy'd, sest selles ehituskeskkonnas ei õnnestunud npm sõltuvusi võrgust lõpuni paigaldada.

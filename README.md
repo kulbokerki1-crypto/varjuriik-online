@@ -1,18 +1,11 @@
-# VARJURIIK V6.25 — 20 NPC mängijat
+# VARJURIIK V6.26 — aktiivsem NPC start
 
-Lisatud 20 püsivat NPC mängijat segatud mängunimedega. NPC-d kasutavad sama majandust ja põhipiiranguid nagu päris mängijad: käigud taastuvad sama süsteemiga ning tegevused kulutavad samu käike ja raha.
+V6.24/V6.25 funktsioonid säilivad. Muudatus puudutab 20 NPC mängija online/offline rütmi.
 
-NPC-d:
-- on vaheldumisi online ja offline;
-- näitavad mängijate nimekirjas Online / viimati online olekut;
-- käivad tööl ja saavad sama palgatsükli järgi palka;
-- teevad rööve ning võivad sattuda vangi / koguda Wanted taset;
-- ostavad mafioososid, turvamehi ja relvi;
-- arendavad levelid;
-- ostavad ja arendavad ärisid ning teevad äriprojekte;
-- võivad aeg-ajalt rünnata nii teisi NPC-sid kui päris mängijaid;
-- PvP puhul kehtivad sama 30 käigu kulu ja sama rünnakute akna limiit.
-
-NPC-de nimed: K6ver, Varikas, Xyron, Vexor, TumeX, Noxx, Kelmik, Zynk, TontX, Kryp, RottX, Varnx, HallVarju, Zerro, SodiX, Nyxar, K2biX, Drayx, VapsikX, Xenoq.
-
-Olemasolevate päris kasutajate progressi ei muudeta ega nullita.
+- Esimesel käivitusel pärast V6.26 deploy’d on 8 NPC-d kohe online.
+- Järgmised 7 tulevad online 1–5 minuti jooksul.
+- Ülejäänud 5 tulevad online umbes 5–12 minuti jooksul.
+- Pärast esimest aktiivset starti käivad NPC-d jälle loomulike juhuslike vahedega online/offline.
+- Tavapärane offline paus on umbes 10–90 minutit; varajase sessiooni lõpetamisel 15–120 minutit.
+- Kõik varasemad piirangud jäävad: NPC-del kuluvad päriselt käigud ja raha ning neile kehtivad samad mängureeglid.
+- Olemasolevaid päris mängijaid ega nende salvestatud progressi ei lähtestata.

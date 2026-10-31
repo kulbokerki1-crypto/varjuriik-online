@@ -193,7 +193,7 @@ function newUser(name,pw,role='player',email=''){const h=hpw(pw);return{id:crypt
 
 const NPC_NAMES=['K6ver','Varikas','Xyron','Vexor','TumeX','Noxx','Kelmik','Zynk','TontX','Kryp','RottX','Varnx','HallVarju','Zerro','SodiX','Nyxar','K2biX','Drayx','VapsikX','Xenoq'];
 function ensureNpcPlayers(){
-  const now=Date.now();
+  const now=Date.now(),npcs=[];
   for(const name of NPC_NAMES){
     const k=key(name);let u=db.users[k];
     if(u&&!u.npc)continue;
@@ -204,6 +204,18 @@ function ensureNpcPlayers(){
     if(!Number.isFinite(Number(u.nextNpcActionAt)))u.nextNpcActionAt=now+rand(20,180)*1000;
     if(!u.lastActive||u.lastActive>now)u.lastActive=now-rand(2,240)*60000;
     if(!u.jobId){const jobs=JOBS[u.education]||[];if(jobs.length){u.jobId=jobs[rand(0,jobs.length-1)].id;u.lastSalaryAt=now}}
+    npcs.push(u);
+  }
+  // V6.26: ühe korra pärast deploy'd toome NPC-d kiiremini mängu sisse.
+  // 8 on kohe online, 7 tulevad 1–5 min jooksul ja ülejäänud 5 min jooksul kuni ~12 min.
+  if(!db.meta.npcFastStartV626){
+    npcs.sort(()=>Math.random()-.5);
+    npcs.forEach((u,i)=>{
+      if(i<8){u.npcOnlineUntil=now+rand(15,40)*60000;u.nextNpcLoginAt=now;u.nextNpcActionAt=now+rand(10,55)*1000;u.lastActive=now-rand(0,2)*60000}
+      else if(i<15){u.npcOnlineUntil=0;u.nextNpcLoginAt=now+rand(1,5)*60000;u.nextNpcActionAt=u.nextNpcLoginAt+rand(10,60)*1000}
+      else{u.npcOnlineUntil=0;u.nextNpcLoginAt=now+rand(5,12)*60000;u.nextNpcActionAt=u.nextNpcLoginAt+rand(10,60)*1000}
+    });
+    db.meta.npcFastStartV626=true;
   }
   db.meta.npcPlayersV625=true;
 }
@@ -231,7 +243,7 @@ function npcAct(u){refresh(u);if(!u.jobId){const jobs=JOBS[u.education]||[];if(j
   if(roll<.90&&npcBuyBusiness(u))return true;
   return npcCrime(u)||npcBuyWeapon(u)||npcBuyTroops(u)||false
 }
-function npcTick(){const now=Date.now();for(const u of Object.values(db.users)){if(!u.npc||u.banned)continue;refresh(u);if(!npcOnline(u,now)){if(now>=Number(u.nextNpcLoginAt||0)){npcStartSession(u,now)}else continue}if(now>=u.npcOnlineUntil){u.nextNpcLoginAt=now+rand(5,120)*60000;continue}if(now<Number(u.nextNpcActionAt||0))continue;u.lastActive=now;npcAct(u);u.nextNpcActionAt=now+rand(30,180)*1000;if(Math.random()<.08){u.npcOnlineUntil=now;u.nextNpcLoginAt=now+rand(10,180)*60000}}saveSoon()}
+function npcTick(){const now=Date.now();for(const u of Object.values(db.users)){if(!u.npc||u.banned)continue;refresh(u);if(!npcOnline(u,now)){if(now>=Number(u.nextNpcLoginAt||0)){npcStartSession(u,now)}else continue}if(now>=u.npcOnlineUntil){u.nextNpcLoginAt=now+rand(10,90)*60000;continue}if(now<Number(u.nextNpcActionAt||0))continue;u.lastActive=now;npcAct(u);u.nextNpcActionAt=now+rand(30,180)*1000;if(Math.random()<.08){u.npcOnlineUntil=now;u.nextNpcLoginAt=now+rand(15,120)*60000}}saveSoon()}
 
 function bankLimit(u){return EDU[u.education]?.bank||1e6}
 function creditBankFirst(u,amount){const total=Math.max(0,Math.floor(Number(amount)||0)),limit=Math.max(0,Math.floor(bankLimit(u))),space=Math.max(0,limit-Math.floor(Number(u.bank)||0)),toBank=Math.min(total,space),toCash=total-toBank;u.bank=(Number(u.bank)||0)+toBank;u.cash=(Number(u.cash)||0)+toCash;return{total,toBank,toCash}}

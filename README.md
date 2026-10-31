@@ -41,3 +41,18 @@ Süntaksikontroll on tehtud `node --check` abil. Täielik Render runtime-test tu
 - Edukas kambarünnak annab 1 punkti; kamba relv maksab 1 punkti + raha.
 - Firmaprojektidel nähtav algkulu, brutotulu, maks, puhaskasum, kestus, käigukulu; vastu võtmine/keeldumine ja töötajate valik.
 - Admin saab muuta spioonide hindu, kamba relvaturgu ja firmaprojektide seadeid.
+
+## V6 mängumuudatused (31.10.2026)
+- Haridusele vastavad töökohad; palk laekub iga 15 minuti järel sularahasse.
+- Algkooli tööpalgad 6 000–15 000 €, põhikooli tööpalgad 15 000–55 000 €; kõrgematel haridustel kasvavad vahemikud edasi.
+- Kamba liikmete päevased rünnakud nullitakse Eesti aja järgi keskööl; kamba punktid säilivad ja juhil on kuni 14 päeva rünnakute ajalugu nähtav.
+- Loos näitab ostetud piletite koguarvu ning ostjaid koos piletite arvuga.
+- Eraldi „Minu andmed” vaade: liitumisaeg, levelid, haridus, skoor, töökoht, palk ja statistika.
+- Mängijate nimekirjas/profiilis kuvatakse viimane online-aeg.
+- Bounty väljad on selgelt märgistatud: summa, rünnakute arv ja kestus minutites.
+- Spiooni palkamise käigukulu: Soome 5, Ukraina 10, Vene 15 käiku ühe spiooni kohta; iga spionaažikatse kulutab 1 spiooni ka ebaõnnestumisel.
+- Isikliku ihukaitsja väljad on selgelt märgistatud, sh lepingu kestus tundides.
+- Relvade baashinnad langetatud 70%.
+- Autopoes saab valida konkreetse auto/kvaliteeditaseme, mitte juhusliku ostu.
+- Krüpto hinnavahemik 120–190.
+- Lugemata teavituse korral muutub „Teated” menüü nähtavalt ja näitab lugemata teadete arvu.

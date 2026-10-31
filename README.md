@@ -154,3 +154,9 @@ Relvade hinnad on V6.5-s normaliseeritud: baashinnad on 6 000–88 000 € ning 
 - Võlgnevuses mängija ei saa uut laenu võtta.
 - Mängijale saadetakse teated võlgnevusse sattumise, automaatsete maksete, viivise ja täieliku tasumise kohta.
 - Laenude vaates kuvatakse võlgnevus, tasumata summa, viivis ja tähtaeg.
+
+
+## V6.22
+- Teise mängija avalikus profiilis kuvatakse nüüd tema sularaha.
+- Pangaraha ei kuvata.
+- Muu profiiliinfo jäi samaks.

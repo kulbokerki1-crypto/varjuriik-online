@@ -160,3 +160,10 @@ Relvade hinnad on V6.5-s normaliseeritud: baashinnad on 6 000–88 000 € ning 
 - Teise mängija avalikus profiilis kuvatakse nüüd tema sularaha.
 - Pangaraha ei kuvata.
 - Muu profiiliinfo jäi samaks.
+
+
+## V6.23 – Kasiino / slotid
+- Lisatud Kasiino menüü ja slotimasin.
+- Mängija sisestab panuse ise; ülempiir on ainult olemasolev sularaha.
+- Serveripoolne juhuslik tulemus, teoreetiline RTP umbes 94%.
+- Võidud lähevad esmalt isiklikule pangakontole, täis panga korral sularahasse.

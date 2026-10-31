@@ -144,3 +144,13 @@ Relvade hinnad on V6.5-s normaliseeritud: baashinnad on 6 000–88 000 € ning 
 - Tootmine valmib kohe nupu vajutamisel; iga kord maksab endiselt 20 käiku.
 - Tootmismahu levelite kogused on 10× suuremad: 50 kuni 3500 ühikut korraga.
 - Olemasolevad kasutajaandmed ja progress säilivad; vanu speedLevel/nextAt välju lihtsalt ei kasutata enam.
+
+## V6.20 – võlgnevused ja automaatne sissenõue
+- Laenu tähtajal proovitakse võlg katta mängija olemasolevast sularahast ja isiklikust pangast.
+- Kui võlg jääb üles, muutub laen staatuseks `overdue` (võlgnevuses); vara ei likvideerita kohe.
+- Võlgnevuse ajal läheb 100% palgast ning ettevõtete projektitulust automaatselt võla katteks.
+- Laenuandja mängijapanga vaba kapital suureneb iga automaatse tagasimakse võrra.
+- Tasumata võlale lisandub 1% viivist ööpäevas, kokku maksimaalselt 50% laenu algsest tagasimaksesummast.
+- Võlgnevuses mängija ei saa uut laenu võtta.
+- Mängijale saadetakse teated võlgnevusse sattumise, automaatsete maksete, viivise ja täieliku tasumise kohta.
+- Laenude vaates kuvatakse võlgnevus, tasumata summa, viivis ja tähtaeg.

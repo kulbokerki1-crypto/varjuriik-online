@@ -100,3 +100,17 @@ Relvade hinnad on V6.5-s normaliseeritud: baashinnad on 6 000–88 000 € ning 
 - Kui pangakonto limiit on täis, laekub ülejääk sularahana.
 - Kõik autode müügitulud (mängijale müük, NPC automaatost ja NPC pakkumise vastuvõtmine) laekuvad sama reegli järgi esmalt panka ja ülejääk sularahasse.
 - Olemasoleva progressi säilitamise loogikat ei muudetud.
+
+
+## V6.12 – autoturu hinnaparandus
+- Autode baashinnad on realistlikumad ja oluliselt madalamad.
+- Poe hinnakõikumine on piiratud umbes ±5% peale.
+- Auto turuväärtus algab alati ostuhinnast kõrgemalt (tavaliselt ~6–14%).
+- Turuväärtus võib ajas liikuda, kuid ei lange alla ostuhinna ja on piiratud umbes +25% juurde.
+- NPC pakkumine arvestab turuhinda ning jätab pärast teenustasu üldjuhul vähemalt ~5% kasumit.
+
+
+## V6.14
+- Automüügi teenustasu on 8% ja läheb mängu keskpanka.
+- NPC autokasum varieerub: mõnel autol väiksem, enamasti 10–25%, harva võib olla suurem.
+- Röövide ja PvP kindlustushüvitised kantakse otse mängija pangakontole, mitte sularahasse.

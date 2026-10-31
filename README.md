@@ -124,8 +124,16 @@ Relvade hinnad on V6.5-s normaliseeritud: baashinnad on 6 000–88 000 € ning 
 - Render Environment: `RESEND_API_KEY`, `EMAIL_FROM`, `PUBLIC_URL`. SMTP seaded jäävad varuvariandiks.
 
 
-## V6.16 — Admini mängija detailvaade
+## V6.17 — Admini mängija detailvaade
 - Admini mängijate halduses on nüüd nupp **Andmed**.
 - Näha on level, XP, skoor, sularaha, pangaraha, käigud, mafioosod, turvamehed, relvad, autod, ärid, haridus, töökoht, kinnisvara, spioonid, statistika, laenud ja muu progress.
 - Parooli/hash’i ega muid salajasi autentimisandmeid ei kuvata.
 - Olemasoleva mänguprogressi säilitamise loogikat ei muudeta.
+
+
+## V6.17
+- PvP ebaõnnestunud rünnak ei näita enam vastase Defense/Attack numbreid.
+- Auto müügi hinnaväli kasutab vaikimisi auto hetke turuväärtust.
+- Krüpto ostu/müügi väljad täituvad automaatselt maksimumkogusega; ostu max arvestab raha ja skoori.
+- Profiili privaatsuse seaded eemaldatud; avaliku profiili väljad määrab mäng.
+- Uus fiktiivne allilma tootmine: materjaliturg, tootmismahu ja kiiruse levelid, 20 käiku tootmiskorra kohta, müügitulu esmalt panka ja panga täitumisel sularahasse.

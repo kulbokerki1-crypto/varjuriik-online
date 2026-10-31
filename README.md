@@ -70,3 +70,10 @@ Kasuta ühte neist:
 2. Render Persistent Disk, mount näiteks `/var/data` ning määra `DATA_DIR=/var/data`.
 
 Kui `/var/data` on mountitud, tuvastab V6.3 selle automaatselt. Serveri logisse kirjutatakse käivitamisel, kas kasutusel on PostgreSQL, püsiv failitee või ohtlik ajutine `./data` salvestus.
+
+
+## Uuenduste andmesäilitus
+
+Alates V6.5-st peavad versiooniuuendused säilitama kõik olemasolevate mängijate andmed. Uuendus ei tohi nullida ega algväärtustega üle kirjutada mängija levelit, XP-d, skoori, sularaha, pangaraha, relvi, vara, autosid, haridust, töökohta, kampa, statistikat ega muud progressi. Uued väljad lisatakse migratsiooniga olemasolevate andmete kõrvale.
+
+Relvade hinnad on V6.5-s normaliseeritud: baashinnad on 6 000–88 000 € ning vana andmebaasi relvahinna override'id eemaldatakse ühe korra migratsiooni käigus. Relva ostuhinda ei korrutata enam üldise majanduse ega relvaturu kordajaga.

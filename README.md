@@ -56,3 +56,17 @@ Süntaksikontroll on tehtud `node --check` abil. Täielik Render runtime-test tu
 - Autopoes saab valida konkreetse auto/kvaliteeditaseme, mitte juhusliku ostu.
 - Krüpto hinnavahemik 120–190.
 - Lugemata teavituse korral muutub „Teated” menüü nähtavalt ja näitab lugemata teadete arvu.
+
+
+## V6.3 – progressi säilitamine uuenduste vahel
+
+See versioon ei kirjuta olemasoleva mängija levelit, XP-d, raha, käike ega muid olemasolevaid välju uuenduse ajal üle. Uued save-väljad lisatakse migratsiooniga olemasolevale kasutajale.
+
+### OLULINE Renderis
+Kui `DATABASE_URL` ei ole määratud ja mäng kasutab ainult `./data/db.json` faili, võib Render uue deploy ajal selle faili kustutada, sest tavaline failisüsteem ei ole püsiv. Sellisel juhul ei saa ükski koodimigratsioon vana andmebaasi taastada.
+
+Kasuta ühte neist:
+1. PostgreSQL ja määra Renderis `DATABASE_URL`; või
+2. Render Persistent Disk, mount näiteks `/var/data` ning määra `DATA_DIR=/var/data`.
+
+Kui `/var/data` on mountitud, tuvastab V6.3 selle automaatselt. Serveri logisse kirjutatakse käivitamisel, kas kasutusel on PostgreSQL, püsiv failitee või ohtlik ajutine `./data` salvestus.

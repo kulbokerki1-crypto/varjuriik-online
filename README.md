@@ -93,3 +93,10 @@ Relvade hinnad on V6.5-s normaliseeritud: baashinnad on 6 000–88 000 € ning 
 - Isikliku pangakonto saldo on panga lehel nähtav.
 - Minu andmed näitab mafioosode/turvameeste koguseid, pangaraha, käike, relvade kogust ja äride arvu.
 - Auto ost ei kuluta enam käike.
+
+
+## V6.10 rahavoo muudatus
+- Töökoha palk laekub esmalt mängija isiklikule pangakontole.
+- Kui pangakonto limiit on täis, laekub ülejääk sularahana.
+- Kõik autode müügitulud (mängijale müük, NPC automaatost ja NPC pakkumise vastuvõtmine) laekuvad sama reegli järgi esmalt panka ja ülejääk sularahasse.
+- Olemasoleva progressi säilitamise loogikat ei muudetud.

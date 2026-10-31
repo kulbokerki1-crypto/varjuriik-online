@@ -139,7 +139,7 @@ Relvade hinnad on V6.5-s normaliseeritud: baashinnad on 6 000–88 000 € ning 
 - Uus fiktiivne allilma tootmine: materjaliturg, tootmismahu ja kiiruse levelid, 20 käiku tootmiskorra kohta, müügitulu esmalt panka ja panga täitumisel sularahasse.
 
 
-## V6.18 — Kohene tootmine ja 10× tootmismaht
+## V6.19 — Kohene tootmine ja 10× tootmismaht
 - Tootmiskiiruse level eemaldatud.
 - Tootmine valmib kohe nupu vajutamisel; iga kord maksab endiselt 20 käiku.
 - Tootmismahu levelite kogused on 10× suuremad: 50 kuni 3500 ühikut korraga.

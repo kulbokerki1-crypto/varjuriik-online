@@ -219,6 +219,52 @@ function seedNpcV627(u,i){
   }
   u.npcSeedV627=true;
 }
+function seedNpcV628(u,i){
+  // Ühekordne loomulikum NPC algseis. Skoori EI kirjutata kunagi käsitsi:
+  // see arvutatakse score(u) abil samadest komponentidest nagu päris mängijal.
+  if(u.npcSeedV628)return;
+  const style=u.npcStyle||NPC_STYLES[i%NPC_STYLES.length];
+  const salts=[73121,18473,52967,31609,9473,68137,25391,8459,41983,57211,13757,7639,34651,9187,60533,22769,48911,15437,70829,29153];
+  const salt=salts[i%salts.length];
+
+  // Raha ja pank ei ole ümarad ega kõigil sama jaotusega. Need on ainult NPC stardipositsioon.
+  const total=Math.max(900000,Math.floor((Number(u.cash||0)+Number(u.bank||0))*0.82)+salt*7);
+  const bankShare=style==='saver'?.58:style==='business'?.36:style==='score'?.27:style==='combat'?.16:style==='crime'?.09:.24;
+  const desiredBank=Math.floor(total*bankShare)+(salt%17000);
+  u.bank=Math.min(bankLimit(u),Math.max(0,desiredBank));
+  u.cash=Math.max(75000,total-u.bank+(salt%997));
+
+  // Ebakorrapärased päris skoorikomponendid. Ühtegi score välja ei eksisteeri ega määrata.
+  const addM=1+(salt%7), addG=1+(Math.floor(salt/7)%6);
+  if(style==='score'){
+    u.mafia=Math.max(Number(u.mafia||0),7+addM*3+i%4);
+    u.guards=Math.max(Number(u.guards||0),5+addG*2+(i%3));
+    u.mafiaLevel=Math.max(Number(u.mafiaLevel||1),1+(salt%5));
+    u.securityLevel=Math.max(Number(u.securityLevel||1),1+(Math.floor(salt/5)%5));
+  }else if(style==='combat'){
+    u.mafia=Math.max(Number(u.mafia||0),11+addM*4+(i%5));
+    u.guards=Math.max(Number(u.guards||0),9+addG*3+(i%4));
+  }else if(style==='business'){
+    const b=BIZ[(i+salt)%BIZ.length];
+    if(b)u.businesses[b.id]=Math.max(Number(u.businesses[b.id])||0,1+((salt+i)%2));
+    u.propertyLevel=Math.max(Number(u.propertyLevel||0),(salt%3));
+  }else if(style==='crime'){
+    u.mafia=Math.max(Number(u.mafia||0),3+(salt%9));
+    u.stats.crimes=Math.max(Number(u.stats.crimes||0),3+(salt%13));
+    u.rep=Math.max(Number(u.rep||0),1+(salt%17));
+  }else if(style==='balanced'){
+    u.mafia=Math.max(Number(u.mafia||0),2+(salt%8));
+    u.guards=Math.max(Number(u.guards||0),2+(Math.floor(salt/3)%8));
+  }
+
+  // Mõnel NPC-l erinev relvakogus; ostetud vara on osa nende algseisust ja edasi kehtivad tavareeglid.
+  if(style!=='saver'){
+    const wi=1+((salt+i)%Math.max(1,Math.min(4,WEAPONS.length-1)));
+    if(WEAPONS[wi])u.weapons[wi]=Math.max(Number(u.weapons[wi])||0,1+(Math.floor(salt/11)%3));
+  }
+  u.turns=Math.max(Number(u.turns)||0,217+((salt+i*37)%433));
+  u.npcSeedV628=true;
+}
 function ensureNpcPlayers(){
   const now=Date.now(),npcs=[];
   for(let i=0;i<NPC_NAMES.length;i++){
@@ -227,6 +273,7 @@ function ensureNpcPlayers(){
     if(!u){u=newUser(name,crypto.randomBytes(24).toString('hex'),'player','');db.users[k]=u}
     u.npc=true;
     seedNpcV627(u,i);
+    seedNpcV628(u,i);
     if(!Number.isFinite(Number(u.npcOnlineUntil)))u.npcOnlineUntil=0;
     if(!Number.isFinite(Number(u.nextNpcLoginAt)))u.nextNpcLoginAt=now+rand(1,90)*60000;
     if(!Number.isFinite(Number(u.nextNpcActionAt)))u.nextNpcActionAt=now+rand(20,180)*1000;
@@ -244,7 +291,7 @@ function ensureNpcPlayers(){
     });
     db.meta.npcFastStartV626=true;
   }
-  db.meta.npcPlayersV625=true;db.meta.npcPersonalitiesV627=true;
+  db.meta.npcPlayersV625=true;db.meta.npcPersonalitiesV627=true;db.meta.npcNaturalStartV628=true;
 }
 function npcOnline(u,now=Date.now()){return !!u.npc&&Number(u.npcOnlineUntil||0)>now}
 function npcStartSession(u,now){u.npcOnlineUntil=now+rand(8,45)*60000;u.nextNpcActionAt=now+rand(10,90)*1000;u.lastActive=now}

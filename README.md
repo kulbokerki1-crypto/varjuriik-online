@@ -1,4 +1,4 @@
-# VARJURIIK V6.26 — aktiivsem NPC start
+# VARJURIIK V6.28 — loomulikum NPC algseis
 
 V6.24/V6.25 funktsioonid säilivad. Muudatus puudutab 20 NPC mängija online/offline rütmi.
 
@@ -17,3 +17,12 @@ V6.24/V6.25 funktsioonid säilivad. Muudatus puudutab 20 NPC mängija online/off
 - NPC-del on ühekordselt erinev väike stardipositsioon, et TOP ei koosneks identsetest skooridest.
 - Pärast starti kehtivad neile jätkuvalt samad raha-, käigu-, Wanted-, vangla- ja PvP piirangud nagu mängijatele.
 - V6.26 aktiivsem online/offline käitumine jääb alles.
+
+
+## V6.28 – loomulikumad NPC numbrid
+- NPC skoori ei määrata käsitsi. See arvutatakse täpselt sama `score(u)` valemiga nagu päris mängijatel.
+- 20 NPC stardi maffia, turva, relvad, ärid ja levelid on ebaühtlased, seega TOP-is ei ole kunstlikke 20 000 / 400 000 tüüpi ümaraid algskoore.
+- NPC-del on erinev sularaha/panga jaotus; osa hoiab rohkem sulas, osa pangas vastavalt mängustiilile.
+- Käigud on samuti erineva algseisuga, kuid edaspidi taastuvad ja kuluvad sama süsteemi järgi nagu päris mängijatel.
+- V6.25–V6.27 NPC online/offline ja erinevad mängustiilid säilivad.
+- Päris kasutajate andmeid see migratsioon ei muuda.

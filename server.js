@@ -288,6 +288,26 @@ app.post('/api/player-bank/settings',auth,(req,res)=>{const b=db.playerBanks[req
 app.post('/api/player-bank/capital',auth,(req,res)=>{const u=req.user,b=db.playerBanks[u.id],dir=String(req.body.dir||''),a=Math.max(0,Math.floor(+req.body.amount||0));if(!b)return res.status(404).json({error:'Sul pole oma panka.'});if(a<=0)return res.status(400).json({error:'Sisesta summa.'});if(dir==='in'){if(u.cash<a)return res.status(400).json({error:'Sul pole nii palju sularaha.'});u.cash-=a;b.capital=(b.capital||0)+a;return ok(res,u,{message:`Panid oma panka ${a} € kapitali.`})}if(dir==='out'){if((b.capital||0)<a)return res.status(400).json({error:'Pangal pole nii palju vaba kapitali. Välja laenatud raha ei saa enne tagasimakset välja võtta.'});b.capital-=a;u.cash+=a;return ok(res,u,{message:`Võtsid oma pangast ${a} € kapitali välja.`})}return res.status(400).json({error:'Vigane tegevus.'})});
 app.post('/api/loan/take',auth,(req,res)=>{const u=req.user;if((u.wanted||0)>=75)return res.status(403).json({error:'Wanted on liiga kõrge uue laenu võtmiseks.'});if(overdueLoans(u).length)return res.status(403).json({error:'Sul on võlgnevuses laen. Uut laenu ei saa enne võla tasumist võtta.'});const b=db.playerBanks[req.body.owner],a=Math.floor(+req.body.amount||0),available=Math.max(0,Math.floor(b?.capital||0));if(!b||!b.active||a<=0||a>available)return res.status(400).json({error:`Laenu ei saa. Pangal on vaba kapitali ${available} €.`});const id=String(db.nextIds.loan++),now=Date.now(),totalDue=Math.floor(a*(1+Number(b.rate||0)/100));b.capital-=a;u.cash+=a;db.loans[id]={id,bankOwner:b.owner,borrower:u.id,principal:a,rate:b.rate,totalDue,unpaid:totalDue,paid:0,createdAt:now,due:now+b.durationHours*3600000,status:'active',lateFeeAdded:0,lastLateFeeAt:0};ok(res,u,{message:`Laen ${a} € võetud. Tagasimakse ${totalDue} €. Raha tuli panga reaalsest kapitalist.`})});
 app.get('/api/loans',auth,(req,res)=>res.json({loans:Object.values(db.loans).filter(l=>l.borrower===req.user.id||l.bankOwner===req.user.id)}));
+app.post('/api/loan/repay',auth,(req,res)=>{
+  const u=req.user,l=db.loans[String(req.body.id||'')];
+  if(!l||l.borrower!==u.id||!['active','overdue'].includes(l.status))return res.status(404).json({error:'Aktiivset laenu ei leitud.'});
+  const due=l.status==='overdue'?Math.max(0,Math.floor(Number(l.unpaid)||0)):Math.max(0,Math.floor(Number(l.unpaid)||loanBaseDue(l)));
+  if(due<=0)return res.status(400).json({error:'Sellel laenul pole tasumata jääki.'});
+  const requested=req.body.all?due:Math.max(0,Math.floor(Number(req.body.amount)||0));
+  if(requested<=0)return res.status(400).json({error:'Sisesta tagasimakse summa.'});
+  const available=Math.max(0,Math.floor(Number(u.bank)||0))+Math.max(0,Math.floor(Number(u.cash)||0));
+  if(available<=0)return res.status(400).json({error:'Sul pole tagasimakseks raha.'});
+  const pay=Math.min(requested,due,available);
+  let left=pay;
+  const fromBank=Math.min(left,Math.max(0,Math.floor(Number(u.bank)||0)));u.bank-=fromBank;left-=fromBank;
+  const fromCash=Math.min(left,Math.max(0,Math.floor(Number(u.cash)||0)));u.cash-=fromCash;left-=fromCash;
+  const paid=pay-left;if(paid<=0)return res.status(400).json({error:'Tagasimakse ebaõnnestus.'});
+  l.unpaid=Math.max(0,due-paid);l.paid=(Number(l.paid)||0)+paid;l.lastPaymentAt=Date.now();l.lastPaymentSource='manual';
+  const b=db.playerBanks[l.bankOwner];if(b)b.capital=(Number(b.capital)||0)+paid;
+  if(l.unpaid<=0){l.unpaid=0;l.status='repaid';l.repaidAt=Date.now();notify(u,'loan',`Laen #${l.id} on täielikult tasutud.`)}
+  else notify(u,'loan',`Maksid laenule #${l.id} ${paid} €. Tasumata jääk ${l.unpaid} €.`);
+  ok(res,u,{message:l.status==='repaid'?`Laen #${l.id} on täielikult tasutud.`:`Maksid ${paid} €. Tasumata ${l.unpaid} €.`,paid,remaining:l.unpaid,status:l.status});
+});
 function settleLoans(){
   const now=Date.now(),day=86400000;
   for(const l of Object.values(db.loans||{})){

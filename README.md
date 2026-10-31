@@ -122,3 +122,10 @@ Relvade hinnad on V6.5-s normaliseeritud: baashinnad on 6 000–88 000 € ning 
 - Pärast edukat paroolivahetust vanad sessioonid aeguvad (`sessionVersion`).
 - Admini käsitsi parooli muutmine jääb varuvariandiks.
 - Render Environment: `RESEND_API_KEY`, `EMAIL_FROM`, `PUBLIC_URL`. SMTP seaded jäävad varuvariandiks.
+
+
+## V6.16 — Admini mängija detailvaade
+- Admini mängijate halduses on nüüd nupp **Andmed**.
+- Näha on level, XP, skoor, sularaha, pangaraha, käigud, mafioosod, turvamehed, relvad, autod, ärid, haridus, töökoht, kinnisvara, spioonid, statistika, laenud ja muu progress.
+- Parooli/hash’i ega muid salajasi autentimisandmeid ei kuvata.
+- Olemasoleva mänguprogressi säilitamise loogikat ei muudeta.

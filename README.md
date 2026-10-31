@@ -1,3 +1,10 @@
+# VARJURIIK V6.24 — iPhone / Safari fix
+
+- Parandatud iPhone Safari nupuvajutused: DOM elemendid seotakse kindlalt ID järgi, mitte ei loodeta brauseri automaatsetele globaalmuutujatele.
+- Lisatud mobiili touch-action.
+- Lisatud nähtav veateade JavaScripti/unhandled promise vea korral.
+- Mängumajandust ega kasutajate andmeid ei muudeta.
+
 # VARJURIIK v5 COMPLETE
 
 Koondversioon pärast V5 beetat.

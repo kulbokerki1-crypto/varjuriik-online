@@ -85,3 +85,11 @@ Relvade hinnad on V6.5-s normaliseeritud: baashinnad on 6 000–88 000 € ning 
 - Müüki pandud auto kontrollib NPC 2–15 minuti jooksul. Kui küsitud hind on turu suhtes mõistlik, ostab NPC auto ära. Kui hind on liiga kõrge, teeb NPC oma ostupakkumise.
 - NPC pakkumise saab vastu võtta või tagasi lükata; kuulutuse saab ka müügist eemaldada.
 - Olemasolevate mängijate progressiandmeid see uuendus ei nulli.
+
+
+## V6.9 progressi säilitamine
+- Uuendus ei kirjuta olemasolevate mängijate andmeid algväärtustega üle. Olemasolev väärtus võidab alati; ainult puuduvad väljad lisatakse.
+- Säilivad muu hulgas level, XP, skoori aluseks olev progress, raha, pangaraha, käigud, relvad ja nende kogused, mafioosod, turvamehed, levelid, ärid, autod, kinnisvara, haridus, töökoht, kamp, spioonid ja statistika.
+- Isikliku pangakonto saldo on panga lehel nähtav.
+- Minu andmed näitab mafioosode/turvameeste koguseid, pangaraha, käike, relvade kogust ja äride arvu.
+- Auto ost ei kuluta enam käike.

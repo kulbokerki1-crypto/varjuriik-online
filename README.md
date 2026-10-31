@@ -32,3 +32,12 @@ Püsiva andmebaasi jaoks määra Render Environmentis `DATABASE_URL` PostgreSQL 
 
 ## Märkus
 Süntaksikontroll on tehtud `node --check` abil. Täielik Render runtime-test tuleb teha pärast deploy'd, sest selles ehituskeskkonnas ei õnnestunud npm sõltuvusi võrgust lõpuni paigaldada.
+
+
+## Tänane koondparandus
+- Kõik mängijatega seotud sisestused kasutajanime järgi.
+- Kindlustuse hinnad ja spioonide hinnad avalikult nähtavad.
+- PvP: võit röövib 50% ohvri hetkesularahast; kaitsmata relvad võivad saagiks minna.
+- Edukas kambarünnak annab 1 punkti; kamba relv maksab 1 punkti + raha.
+- Firmaprojektidel nähtav algkulu, brutotulu, maks, puhaskasum, kestus, käigukulu; vastu võtmine/keeldumine ja töötajate valik.
+- Admin saab muuta spioonide hindu, kamba relvaturgu ja firmaprojektide seadeid.

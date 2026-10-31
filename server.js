@@ -192,13 +192,41 @@ function clearLoginBucket(req,name){loginBuckets.delete(clientIp(req)+'|'+key(na
 function newUser(name,pw,role='player',email=''){const h=hpw(pw);return{id:crypto.randomUUID(),name,email:String(email||'').trim().toLowerCase().slice(0,120),...h,role,banned:false,vip:false,vipUntil:0,cash:2500000,bank:0,turns:300,hp:100,level:1,xp:0,rep:0,wanted:0,jailedUntil:0,insurance:{active:false,until:0,coverage:.3},privacy:{cash:true,bank:false,levels:true,stats:true,lastActive:false},education:0,educationProgress:0,securityLevel:1,mafiaLevel:1,propertyLevel:0,mafia:0,guards:0,weapons:{},crypto:0,city:'Paide',businesses:{},carLicense:0,cars:[],gangId:null,spies:{finnish:0,ukrainian:0,russian:0},intelLevel:0,lastSpyAt:{},bodyguard:null,bodyguardUntil:0,guardingClient:null,guardingUntil:0,businessProjects:{},businessWorkers:{},businessRejected:{},lastTurnAt:Date.now(),lastActive:Date.now(),createdAt:Date.now(),jobId:null,lastSalaryAt:Date.now(),pvpHits:{},maintenanceDue:Date.now()+86400000,sessionVersion:1,lastIp:'',lastUserAgent:'',lastLoginAt:0,failedLogins:0,lockedUntil:0,stats:{wins:0,losses:0,robbed:0,pokerWins:0,crimes:0,operations:0},production:{capacityLevel:1,speedLevel:1,materials:{plant:0,chem:0,pack:0},stock:0,nextAt:0,totalMade:0,totalSold:0}}}
 
 const NPC_NAMES=['K6ver','Varikas','Xyron','Vexor','TumeX','Noxx','Kelmik','Zynk','TontX','Kryp','RottX','Varnx','HallVarju','Zerro','SodiX','Nyxar','K2biX','Drayx','VapsikX','Xenoq'];
+const NPC_STYLES=['score','combat','business','crime','saver','balanced','score','combat','business','crime','balanced','saver','score','business','combat','crime','score','balanced','business','combat'];
+function seedNpcV627(u,i){
+  // Ainult NPC-de ühekordne stardierinevus. Päris kasutajaid ei puuduta.
+  // Edaspidi teenivad/kulutavad NPC-d kõike sama mänguloogika järgi nagu mängijad.
+  if(u.npcSeedV627)return;
+  const style=NPC_STYLES[i%NPC_STYLES.length];u.npcStyle=style;
+  const baseCash=[1800000,2600000,3400000,4200000,5200000][i%5];
+  u.cash=Math.max(Number(u.cash)||0,baseCash);
+  u.bank=Math.max(0,Number(u.bank)||0);
+  u.turns=Math.max(Number(u.turns)||0,180+(i%7)*70);
+  // Väikesed erinevad stardipositsioonid, et TOP ei oleks 20 identset rida.
+  if(style==='score'){
+    u.mafiaLevel=Math.max(u.mafiaLevel||1,1+(i%4));u.securityLevel=Math.max(u.securityLevel||1,1+((i+2)%4));
+    u.mafia=Math.max(u.mafia||0,6+(i%5)*4);u.guards=Math.max(u.guards||0,4+(i%4)*3);
+    const wi=1+(i%3);u.weapons[wi]=Math.max(Number(u.weapons[wi])||0,1+(i%2));
+  }else if(style==='combat'){
+    u.mafia=Math.max(u.mafia||0,10+(i%6)*5);u.guards=Math.max(u.guards||0,8+(i%5)*4);
+    const wi=1+(i%4);u.weapons[wi]=Math.max(Number(u.weapons[wi])||0,1+(i%3));
+  }else if(style==='business'){
+    const b=BIZ[i%BIZ.length];if(b)u.businesses[b.id]=Math.max(Number(u.businesses[b.id])||0,1+(i%2));
+  }else if(style==='crime'){
+    u.stats.crimes=Math.max(Number(u.stats.crimes)||0,i%8);u.rep=Math.max(Number(u.rep)||0,i%10);
+  }else if(style==='saver'){
+    u.bank=Math.min(bankLimit(u),Math.max(Number(u.bank)||0,300000+(i%5)*150000));
+  }
+  u.npcSeedV627=true;
+}
 function ensureNpcPlayers(){
   const now=Date.now(),npcs=[];
-  for(const name of NPC_NAMES){
-    const k=key(name);let u=db.users[k];
+  for(let i=0;i<NPC_NAMES.length;i++){
+    const name=NPC_NAMES[i],k=key(name);let u=db.users[k];
     if(u&&!u.npc)continue;
     if(!u){u=newUser(name,crypto.randomBytes(24).toString('hex'),'player','');db.users[k]=u}
-    u.npc=true;u.npcStyle=u.npcStyle||['risk','business','combat','balanced'][Math.floor(Math.random()*4)];
+    u.npc=true;
+    seedNpcV627(u,i);
     if(!Number.isFinite(Number(u.npcOnlineUntil)))u.npcOnlineUntil=0;
     if(!Number.isFinite(Number(u.nextNpcLoginAt)))u.nextNpcLoginAt=now+rand(1,90)*60000;
     if(!Number.isFinite(Number(u.nextNpcActionAt)))u.nextNpcActionAt=now+rand(20,180)*1000;
@@ -206,8 +234,7 @@ function ensureNpcPlayers(){
     if(!u.jobId){const jobs=JOBS[u.education]||[];if(jobs.length){u.jobId=jobs[rand(0,jobs.length-1)].id;u.lastSalaryAt=now}}
     npcs.push(u);
   }
-  // V6.26: ühe korra pärast deploy'd toome NPC-d kiiremini mängu sisse.
-  // 8 on kohe online, 7 tulevad 1–5 min jooksul ja ülejäänud 5 min jooksul kuni ~12 min.
+  // V6.26 kiire start jääb alles: esimesel korral osa kohe online, ülejäänud tulevad minutitega.
   if(!db.meta.npcFastStartV626){
     npcs.sort(()=>Math.random()-.5);
     npcs.forEach((u,i)=>{
@@ -217,33 +244,43 @@ function ensureNpcPlayers(){
     });
     db.meta.npcFastStartV626=true;
   }
-  db.meta.npcPlayersV625=true;
+  db.meta.npcPlayersV625=true;db.meta.npcPersonalitiesV627=true;
 }
 function npcOnline(u,now=Date.now()){return !!u.npc&&Number(u.npcOnlineUntil||0)>now}
 function npcStartSession(u,now){u.npcOnlineUntil=now+rand(8,45)*60000;u.nextNpcActionAt=now+rand(10,90)*1000;u.lastActive=now}
-function npcBuyTroops(u){const type=Math.random()<.5?'mafia':'guards',unit=type==='mafia'?12000:13500,maxByCash=Math.floor(u.cash/(unit*market())),maxByTurns=Math.floor(u.turns/5),n=Math.max(0,Math.min(rand(1,5),maxByCash,maxByTurns));if(n<1)return false;const cost=Math.floor(n*unit*market());if(!needTurns(u,n*5))return false;u.cash-=cost;gameIncome(cost,'troop_purchase',u);u[type]+=n;return true}
-function npcBuyWeapon(u){const affordable=WEAPONS.map((w,i)=>({w,i,c:weaponPrice(i)})).filter(x=>x.i>0&&x.c<=u.cash&&u.turns>=5);if(!affordable.length)return false;const pick=affordable[Math.min(affordable.length-1,Math.floor(Math.random()*affordable.length))],q=Math.max(1,Math.min(rand(1,3),Math.floor(u.cash/pick.c),Math.floor(u.turns/5)));if(q<1)return false;const cost=pick.c*q;if(!needTurns(u,5*q))return false;u.cash-=cost;gameIncome(cost,'weapon_purchase',u);u.weapons[pick.i]=(u.weapons[pick.i]||0)+q;return true}
-function npcLevelUp(u){const types=['mafia','security','property'].sort(()=>Math.random()-.5);for(const t of types){const field=t==='mafia'?'mafiaLevel':t==='security'?'securityLevel':'propertyLevel',max=t==='property'?100:300,n=(u[field]||0)+1;if(n>max)continue;const base=t==='property'?PROPERTY_PRICES[n]:LEVEL_PRICES[n],cost=Math.floor((base||Infinity)*market());if(Number.isFinite(cost)&&u.cash>=cost){u.cash-=cost;u[field]=n;return true}}return false}
-function npcBuyBusiness(u){const opts=BIZ.map(b=>{const lvl=u.businesses[b.id]||0;return{b,lvl,cost:Math.floor(b.base*Math.pow(2.05,lvl)*market())}}).filter(x=>x.cost<=u.cash&&u.turns>=40);if(!opts.length)return false;const x=opts[rand(0,opts.length-1)];if(!needTurns(u,40))return false;u.cash-=x.cost;gameIncome(Math.floor(x.cost*.05),'business_upgrade_fee',u);u.businesses[x.b.id]=x.lvl+1;return true}
+function npcBuyTroops(u){const prefer=u.npcStyle==='combat'||u.npcStyle==='score',type=prefer?(Math.random()<.55?'mafia':'guards'):(Math.random()<.5?'mafia':'guards'),unit=type==='mafia'?12000:13500,maxByCash=Math.floor(u.cash/(unit*market())),maxByTurns=Math.floor(u.turns/5),maxQ=prefer?8:5,n=Math.max(0,Math.min(rand(1,maxQ),maxByCash,maxByTurns));if(n<1)return false;const cost=Math.floor(n*unit*market());if(!needTurns(u,n*5))return false;u.cash-=cost;gameIncome(cost,'troop_purchase',u);u[type]+=n;return true}
+function npcBuyWeapon(u){const affordable=WEAPONS.map((w,i)=>({w,i,c:weaponPrice(i)})).filter(x=>x.i>0&&x.c<=u.cash&&u.turns>=5);if(!affordable.length)return false;let pick;if(u.npcStyle==='score'||u.npcStyle==='combat')pick=affordable[Math.max(0,affordable.length-1-rand(0,Math.min(2,affordable.length-1)))];else pick=affordable[rand(0,affordable.length-1)];const q=Math.max(1,Math.min(rand(1,u.npcStyle==='score'?4:3),Math.floor(u.cash/pick.c),Math.floor(u.turns/5)));if(q<1)return false;const cost=pick.c*q;if(!needTurns(u,5*q))return false;u.cash-=cost;gameIncome(cost,'weapon_purchase',u);u.weapons[pick.i]=(u.weapons[pick.i]||0)+q;return true}
+function npcLevelUp(u){let types;if(u.npcStyle==='score')types=['mafia','security','property'];else if(u.npcStyle==='combat')types=['mafia','security','property'];else if(u.npcStyle==='business')types=['property','security','mafia'];else types=['mafia','security','property'].sort(()=>Math.random()-.5);for(const t of types){const field=t==='mafia'?'mafiaLevel':t==='security'?'securityLevel':'propertyLevel',max=t==='property'?100:300,n=(u[field]||0)+1;if(n>max)continue;const base=t==='property'?PROPERTY_PRICES[n]:LEVEL_PRICES[n],cost=Math.floor((base||Infinity)*market());if(Number.isFinite(cost)&&u.cash>=cost){u.cash-=cost;u[field]=n;return true}}return false}
+function npcBuyBusiness(u){const opts=BIZ.map(b=>{const lvl=u.businesses[b.id]||0;return{b,lvl,cost:Math.floor(b.base*Math.pow(2.05,lvl)*market())}}).filter(x=>x.cost<=u.cash&&u.turns>=40);if(!opts.length)return false;const x=u.npcStyle==='business'?opts.sort((a,b)=>a.lvl-b.lvl)[0]:opts[rand(0,opts.length-1)];if(!needTurns(u,40))return false;u.cash-=x.cost;gameIncome(Math.floor(x.cost*.05),'business_upgrade_fee',u);u.businesses[x.b.id]=x.lvl+1;return true}
 function npcBusinessProject(u){
   for(const [id,p] of Object.entries(u.businessProjects||{})){if(Date.now()>=p.endsAt){const taxRate=clamp(Number(db.settings.businessTax||.08),0,.9),gross=Math.floor(p.reward*market()),tax=Math.floor(gross*taxRate),net=gross-tax;creditBusinessWithDebt(u,net,'business_project');gameIncome(tax,'business_tax',u);delete u.businessProjects[id];return true}}
   const owned=BIZ.filter(b=>(u.businesses[b.id]||0)>0&&!u.businessProjects[b.id]);if(!owned.length)return false;const b=owned[rand(0,owned.length-1)],lvl=u.businesses[b.id]||1,list=(BUSINESS_PROJECTS[b.id]||[]).map(p=>projectCfg(b.id,p));if(!list.length)return false;const z=list[0];let workers=u.businessWorkers[b.id]||0;if(workers<z.workers){const need=z.workers-workers,unit=Math.floor((db.settings.workerBasePrice||25000)*market()),cost=unit*need,turns=Math.max(5,need);if(u.cash<cost||u.turns<turns)return false;if(!needTurns(u,turns))return false;u.cash-=cost;gameIncome(Math.floor(cost*(db.settings.businessTax||.08)),'worker_fee',u);u.businessWorkers[b.id]=workers+need;workers+=need}
   const cost=Math.floor(b.base*Math.max(1,lvl)*z.costMult*market());if(u.cash<cost||u.turns<z.turns)return false;if(!needTurns(u,z.turns))return false;u.cash-=cost;gameIncome(Math.floor(cost*(db.settings.businessTax||.08)),'business_fee',u);u.businessProjects[b.id]={id:crypto.randomUUID(),projectId:z.id,name:z.name,startedAt:Date.now(),endsAt:Date.now()+z.hours*3600000,cost,reward:Math.floor(cost*z.rewardMult*(1+.04*Math.max(0,lvl-1))),workers:z.workers};return true
 }
-function npcCrime(u){if(!freeToAct(u))return false;const choices=CRIMES.filter(c=>u.level>=c.need&&u.turns>=c.turns);if(!choices.length)return false;const c=choices[rand(0,choices.length-1)];if(!needTurns(u,c.turns))return false;const cb=combat(u),fail=clamp(c.risk-cb.atk/(cb.atk+3e6),.04,.72);if(Math.random()<fail){const grossLoss=Math.floor(rand(c.min,c.max)*.25);u.cash=Math.max(0,u.cash-grossLoss);u.wanted=clamp((u.wanted||0)+2,0,100);if(Math.random()<clamp(.08+u.wanted/180,.08,.65)){const mins=5+Math.floor(u.wanted/5);u.jailedUntil=Date.now()+mins*60000}}else{const g=Math.floor(rand(c.min,c.max)*db.settings.heistMultiplier);u.cash+=g;u.stats.crimes++;u.wanted=clamp((u.wanted||0)+1+Math.floor(c.risk*5),0,100);u.rep=clamp((u.rep||0)+1,-1000,1000);u.level=Math.max(u.level||1,1+Math.floor(Math.sqrt(u.stats.crimes/5)));u.xp=Math.max(Number(u.xp||0),u.stats.crimes*10)}return true}
-function npcAttackPlayer(a){if(!freeToAct(a)||a.turns<30)return false;const now=Date.now(),targets=Object.values(db.users).filter(b=>!b.banned&&b.id!==a.id&&!['owner','admin'].includes(b.role)&&(b.cash||0)>0);if(!targets.length)return false;const b=targets[rand(0,targets.length-1)],winMs=db.settings.pvpWindowMin*60000,h=(a.pvpHits[b.id]||[]).filter(t=>now-t<winMs);if(h.length>=db.settings.pvpMaxHits)return false;if(!needTurns(a,30))return false;h.push(now);a.pvpHits[b.id]=h;const A=combat(a),B=combat(b);if(A.atk>B.def){const take=Math.max(0,Math.floor(b.cash*.50));b.cash-=take;a.cash+=take;a.stats.wins++;b.stats.losses++;notify(b,'pvp',`${a.name} ründas sind. Kaotasid ${take} €.`);const loose=freeWeaponMap(b);for(const[i,q]of Object.entries(loose)){const stolen=Math.min(q,Math.max(1,Math.floor(q*.20)));if(stolen>0){b.weapons[i]-=stolen;a.weapons[i]=(a.weapons[i]||0)+stolen}}}else{a.stats.losses++;b.stats.wins++;notify(b,'pvp',`${a.name} proovis sind rünnata, kuid sinu kaitse pidas.`)}return true}
+function npcCrime(u){if(!freeToAct(u))return false;const choices=CRIMES.filter(c=>u.level>=c.need&&u.turns>=c.turns);if(!choices.length)return false;const pool=u.npcStyle==='crime'?choices.slice(-Math.min(3,choices.length)):choices,c=pool[rand(0,pool.length-1)];if(!needTurns(u,c.turns))return false;const cb=combat(u),fail=clamp(c.risk-cb.atk/(cb.atk+3e6),.04,.72);if(Math.random()<fail){const grossLoss=Math.floor(rand(c.min,c.max)*.25);u.cash=Math.max(0,u.cash-grossLoss);u.wanted=clamp((u.wanted||0)+2,0,100);if(Math.random()<clamp(.08+u.wanted/180,.08,.65)){const mins=5+Math.floor(u.wanted/5);u.jailedUntil=Date.now()+mins*60000}}else{const g=Math.floor(rand(c.min,c.max)*db.settings.heistMultiplier);u.cash+=g;u.stats.crimes++;u.wanted=clamp((u.wanted||0)+1+Math.floor(c.risk*5),0,100);u.rep=clamp((u.rep||0)+1,-1000,1000);u.level=Math.max(u.level||1,1+Math.floor(Math.sqrt(u.stats.crimes/5)));u.xp=Math.max(Number(u.xp||0),u.stats.crimes*10)}return true}
+function npcAttackPlayer(a){if(!freeToAct(a)||a.turns<30)return false;const now=Date.now(),targets=Object.values(db.users).filter(b=>!b.banned&&b.id!==a.id&&!['owner','admin'].includes(b.role)&&(b.cash||0)>0);if(!targets.length)return false;let pool=targets;if(a.npcStyle==='combat'){const A=combat(a);const sensible=targets.filter(b=>combat(b).def<A.atk*1.2);if(sensible.length)pool=sensible}const b=pool[rand(0,pool.length-1)],winMs=db.settings.pvpWindowMin*60000,h=(a.pvpHits[b.id]||[]).filter(t=>now-t<winMs);if(h.length>=db.settings.pvpMaxHits)return false;if(!needTurns(a,30))return false;h.push(now);a.pvpHits[b.id]=h;const A=combat(a),B=combat(b);if(A.atk>B.def){const take=Math.max(0,Math.floor(b.cash*.50));b.cash-=take;a.cash+=take;a.stats.wins++;b.stats.losses++;notify(b,'pvp',`${a.name} ründas sind. Kaotasid ${take} €.`);const loose=freeWeaponMap(b);for(const[i,q]of Object.entries(loose)){const stolen=Math.min(q,Math.max(1,Math.floor(q*.20)));if(stolen>0){b.weapons[i]-=stolen;a.weapons[i]=(a.weapons[i]||0)+stolen}}}else{a.stats.losses++;b.stats.wins++;notify(b,'pvp',`${a.name} proovis sind rünnata, kuid sinu kaitse pidas.`)}return true}
+function npcSaveMoney(u){if(u.cash<150000)return false;const limit=bankLimit(u),space=Math.max(0,limit-u.bank),amt=Math.min(space,Math.floor(u.cash*(.25+Math.random()*.35)));if(amt<10000)return false;u.cash-=amt;u.bank+=amt;return true}
 function npcAct(u){refresh(u);if(!u.jobId){const jobs=JOBS[u.education]||[];if(jobs.length){u.jobId=jobs[rand(0,jobs.length-1)].id;u.lastSalaryAt=Date.now();return true}}
-  if(npcBusinessProject(u))return true;
-  const roll=Math.random();
-  if(roll<.12&&npcAttackPlayer(u))return true;
-  if(roll<.34&&npcCrime(u))return true;
-  if(roll<.50&&npcBuyTroops(u))return true;
-  if(roll<.65&&npcBuyWeapon(u))return true;
-  if(roll<.78&&npcLevelUp(u))return true;
-  if(roll<.90&&npcBuyBusiness(u))return true;
-  return npcCrime(u)||npcBuyWeapon(u)||npcBuyTroops(u)||false
+  if((u.npcStyle==='business'||u.npcStyle==='balanced')&&npcBusinessProject(u))return true;
+  const r=Math.random(),style=u.npcStyle||'balanced';
+  if(style==='score'){
+    if(r<.28&&npcLevelUp(u))return true;if(r<.55&&npcBuyTroops(u))return true;if(r<.78&&npcBuyWeapon(u))return true;if(r<.90&&npcBuyBusiness(u))return true;return npcCrime(u)||npcLevelUp(u)||npcBuyTroops(u)||npcBuyWeapon(u)
+  }
+  if(style==='combat'){
+    if(r<.28&&npcAttackPlayer(u))return true;if(r<.48&&npcBuyWeapon(u))return true;if(r<.68&&npcBuyTroops(u))return true;if(r<.84&&npcCrime(u))return true;if(r<.94&&npcLevelUp(u))return true;return npcAttackPlayer(u)||npcCrime(u)||npcBuyWeapon(u)
+  }
+  if(style==='business'){
+    if(r<.30&&npcBusinessProject(u))return true;if(r<.55&&npcBuyBusiness(u))return true;if(r<.70&&npcLevelUp(u))return true;if(r<.84&&npcSaveMoney(u))return true;if(r<.93&&npcCrime(u))return true;return npcBusinessProject(u)||npcBuyBusiness(u)||npcSaveMoney(u)
+  }
+  if(style==='crime'){
+    if(r<.52&&npcCrime(u))return true;if(r<.68&&npcAttackPlayer(u))return true;if(r<.80&&npcBuyWeapon(u))return true;if(r<.90&&npcBuyTroops(u))return true;return npcCrime(u)||npcAttackPlayer(u)||npcBuyWeapon(u)
+  }
+  if(style==='saver'){
+    if(r<.42&&npcSaveMoney(u))return true;if(r<.62&&npcCrime(u))return true;if(r<.75&&npcBuyBusiness(u))return true;if(r<.86&&npcLevelUp(u))return true;return npcSaveMoney(u)||npcCrime(u)||npcBuyBusiness(u)
+  }
+  if(r<.12&&npcAttackPlayer(u))return true;if(r<.34&&npcCrime(u))return true;if(r<.50&&npcBuyTroops(u))return true;if(r<.65&&npcBuyWeapon(u))return true;if(r<.78&&npcLevelUp(u))return true;if(r<.90&&npcBuyBusiness(u))return true;return npcCrime(u)||npcBuyWeapon(u)||npcBuyTroops(u)||false
 }
-function npcTick(){const now=Date.now();for(const u of Object.values(db.users)){if(!u.npc||u.banned)continue;refresh(u);if(!npcOnline(u,now)){if(now>=Number(u.nextNpcLoginAt||0)){npcStartSession(u,now)}else continue}if(now>=u.npcOnlineUntil){u.nextNpcLoginAt=now+rand(10,90)*60000;continue}if(now<Number(u.nextNpcActionAt||0))continue;u.lastActive=now;npcAct(u);u.nextNpcActionAt=now+rand(30,180)*1000;if(Math.random()<.08){u.npcOnlineUntil=now;u.nextNpcLoginAt=now+rand(15,120)*60000}}saveSoon()}
+function npcTick(){const now=Date.now();for(const u of Object.values(db.users)){if(!u.npc||u.banned)continue;refresh(u);if(!npcOnline(u,now)){if(now>=Number(u.nextNpcLoginAt||0)){npcStartSession(u,now)}else continue}if(now>=u.npcOnlineUntil){u.nextNpcLoginAt=now+rand(10,90)*60000;continue}if(now<Number(u.nextNpcActionAt||0))continue;u.lastActive=now;npcAct(u);const style=u.npcStyle||'balanced',pace=style==='crime'||style==='combat'?rand(25,130):style==='saver'?rand(70,220):rand(35,180);u.nextNpcActionAt=now+pace*1000;if(Math.random()<(style==='saver'?.12:.08)){u.npcOnlineUntil=now;u.nextNpcLoginAt=now+rand(style==='saver'?25:15,style==='saver'?150:120)*60000}}saveSoon()}
 
 function bankLimit(u){return EDU[u.education]?.bank||1e6}
 function creditBankFirst(u,amount){const total=Math.max(0,Math.floor(Number(amount)||0)),limit=Math.max(0,Math.floor(bankLimit(u))),space=Math.max(0,limit-Math.floor(Number(u.bank)||0)),toBank=Math.min(total,space),toCash=total-toBank;u.bank=(Number(u.bank)||0)+toBank;u.cash=(Number(u.cash)||0)+toCash;return{total,toBank,toCash}}

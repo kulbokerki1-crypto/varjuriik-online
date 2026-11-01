@@ -222,3 +222,12 @@ V6.33.1 parandus
 - Kontosse sisenemine logitakse audit- ja turvalogisse.
 - Teise kasutaja kontos olles kuvatakse `Tagasi OWNER kontole` nupp, mis taastab owner-sessioni.
 - Admin ei saa kasutajate kontodesse siseneda ega OWNER kontot muuta.
+
+## V6.57 — Keskpanga avalikud laenud ja admini täielik ligipääs
+- Admin ja OWNER näevad ning haldavad sama Mängu Keskpanga päris raha- ja käigufondi.
+- Admin saab kinnitada, tagasi lükata ja teha Keskpanga laenutaotlustele vastupakkumisi.
+- Admin saab hallata Keskpanga raha- ja käigufondi samamoodi nagu OWNER.
+- Pangad lehel on kõigile avalikult näha aktiivsed Keskpanga laenud: kasutaja, laenuliik, algsumma, intress, võtmise aeg, tähtaeg ja jääk.
+- Võlglased on eraldi punases nimekirjas koos viivise, tasumata jäägi, üle tähtaja aja ja seni tagasi makstud summaga.
+- Oma Keskpanga raha- või käigulaenu saab endiselt käsitsi osaliselt või täielikult tagasi maksta.
+- Vastupakkumise nõustumisel väljastatakse raha/käigud automaatselt ja vastav Keskpanga fond väheneb.

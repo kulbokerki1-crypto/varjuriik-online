@@ -188,3 +188,10 @@ V6.33.1 parandus
 - Panga- ja adminiplokid on piiratud kõrgusega ning eraldi keritavad, et mobiilis ei peaks nii palju lehte alla lappama.
 - V6.51 käigupakkide täielik kustutamine on alles.
 - Olemasolevaid mängijaandmeid/progressi ei nullita; gameBank uued väljad lisatakse ainult puuduvate väljadena.
+
+
+## V6.53
+- Parandatud Pangad lehe mobiilne kerimine: pangakaardid ei kasuta enam sisemist lukustavat scrolli.
+- Pangad leht kerib jälle tavaliselt kogu lehega.
+- Admini lehe kaardid ei lukusta enam mobiili põhikerimist; pikad logid/nimekirjad võivad endiselt oma konteineris kerida.
+- V6.52 keskpanga raha- ja käigulaenud ning V6.51 käigupakkide kustutamine säilivad.

@@ -161,3 +161,30 @@ V6.33.1 parandus
 - Mustast ärist eemaldatud täielikult vahelejäämise/kontrolli risk: ANT/KOK/JUPP müük ei tõsta enam Wanted-taset, ei konfiskeeri kaupa ega määra trahvi/vangistust.
 - Eemaldatud ka riskiga seotud annetuste plokk, sest sellel pole enam funktsiooni.
 - Must kassa, 15 minuti turuvoorud, ostu- ja müügilimiidid ning ANT/KOK/JUPP kauplemine jäävad alles.
+
+
+## V6.50 — käigupakkide haldus
+- Admini vaates kuvatakse loodud käigupakid koos staatusega.
+- Aktiivse paki saab nupuga **Võta müügist maha** koheselt müügist eemaldada.
+- Müügist maha võetud paki saab hiljem nupuga **Pane uuesti müüki** taastada.
+- Paki eemaldamine ei kustuta mängijate andmeid ega vanu tellimusi.
+
+
+## V6.51
+- Admin saab käigupaki nüüd täielikult kustutada, mitte ainult müügist maha võtta.
+- Kustutamine eemaldab paki `turnShop` nimekirjast jäädavalt.
+- Varasemad tellimused ja mängijate andmed jäävad alles.
+
+
+## V6.52 — sama Mängu Keskpank ka mängijatele + raha/käigulaenud
+- Pangad lehel kuvatakse sama olemasolev Mängu Keskpank, mis on owner/admin vaates.
+- Kõigile mängijatele on nähtav keskpanga rahafond ja käigufond.
+- Keskpangast saab taotleda rahalaenu või käigulaenu.
+- Taotlus ei väljastu automaatselt: owner kinnitab, lükkab tagasi või teeb vastupakkumise (summa, intress, tähtaeg).
+- Mängija saab vastupakkumise vastu võtta või tagasi lükata.
+- Rahalaen vähendab keskpanga rahafondi; tagasimakse + intress lisandub sinna tagasi.
+- Käigulaen vähendab keskpanga käigufondi; tagasimakse + intress lisandub sinna tagasi.
+- Owner saab admini Keskpanga plokis käigufondi käike lisada või eemaldada.
+- Panga- ja adminiplokid on piiratud kõrgusega ning eraldi keritavad, et mobiilis ei peaks nii palju lehte alla lappama.
+- V6.51 käigupakkide täielik kustutamine on alles.
+- Olemasolevaid mängijaandmeid/progressi ei nullita; gameBank uued väljad lisatakse ainult puuduvate väljadena.

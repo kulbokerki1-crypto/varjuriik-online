@@ -120,3 +120,8 @@ V6.33.1 parandus
 - Turva-, joogi- ja söögilepingutel on taas nähtav `⚠️ lõpeb varsti` hoiatus.
 - Hoiatus sõltub lepingu pikkusest: 1h → viimased 15 min; 3h → viimased 30 min; 6h → viimane 1h; 12h → viimased 2h.
 - V6.42 hanke kestuse kuvamise parandus jääb alles.
+
+
+## V6.44 — lepingu hoiatuse täpsustus
+- Kui turva-, joogi- või söögilepingul on 1h või vähem jäänud, kuvatakse alati `⚠️ lõpeb varsti`.
+- 6h lepingutel algab hoiatus 1.5h enne lõppu ja 12h lepingutel 2h enne lõppu.

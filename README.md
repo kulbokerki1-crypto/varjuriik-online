@@ -125,3 +125,11 @@ V6.33.1 parandus
 ## V6.44 — lepingu hoiatuse täpsustus
 - Kui turva-, joogi- või söögilepingul on 1h või vähem jäänud, kuvatakse alati `⚠️ lõpeb varsti`.
 - 6h lepingutel algab hoiatus 1.5h enne lõppu ja 12h lepingutel 2h enne lõppu.
+
+
+## V6.45 — live külastajad
+- Klubi info ülaosas kuvatakse avatud koha hetke külastajate arv.
+- Live külastajate näit uuendab end automaatselt iga 1 minuti järel.
+- Näidatakse trendi: ↑ kasvab / → stabiilne / ↓ langeb.
+- Live arv sõltub piletihinnast, personalist, mainest, inventarist, tarnijate/turva kvaliteedist, reklaamist ja VIP-ist.
+- Avaliku ööelu tabeli avatud klubi külastajate näit kasutab sama live-arvestust.

@@ -301,3 +301,11 @@ V6.33.1 parandus
 - Botid kasutavad samuti automaatlaenu nii raha kui käikude jaoks.
 - Automaatlaenu tagasimakse ja intress lähevad tagasi samasse automaatfondi; ka üle tähtaja sundtagasimaksed lähevad õigesse fondi.
 - Avalikus Keskpanga vaates on näha automaatlaenu fikseeritud tingimused ja mõlema automaatfondi saadaval jääk.
+
+## V6.67 — Keskpanga tugevam võlgniku sundtagastus
+- Kui Keskpanga rahalaen läheb üle tähtaja, võetakse mängija/boti pangakontolt ja sularahast automaatselt raha võla katteks (mitte rohkem kui võla jääk).
+- Kontroll toimub serveri tavatsüklis, seega ka hiljem kontole tekkinud raha suunatakse üle tähtaja võla katteks.
+- Palk ja muud uued rahatulud jätkavad automaatselt Keskpanga võla katmist.
+- Automaatlaenude tagasimaksed lähevad tagasi õigesse automaatfondi; tavalaenude omad Keskpanga põhifondi.
+- 72 tundi üle tähtaja olnud tasumata laen saadab ühe eraldi hoiatuse nii OWNERile kui ADMINile.
+- 72h hoiatus lisatakse ka Keskpanga logisse ja seda ei saadeta iga serveritsükliga uuesti.

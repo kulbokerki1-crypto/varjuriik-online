@@ -290,3 +290,14 @@ V6.33.1 parandus
 - Botide Keskpanga laenutaotluste tähtajad on nüüd ainult 1h, 3h, 6h, 12h või 24h.
 - Botid ei küsi enam 48h, 72h, 120h ega 168h laene.
 - V6.64 botide vastupakkumiste reaktsiooniparandus jääb alles.
+
+## V6.66 – Keskpanga automaatlaenud (raha + käigud)
+- Admin/owner saab määrata automaatlaenu fikseeritud intressi ja tähtaja.
+- Eraldi max rahalaen ja max käigulaen.
+- Eraldi automaatne rahafond ja automaatne käigufond; vahendid liigutatakse põhifondist automaatfondi ning saab tagasi põhifondi tõsta.
+- Mängija/bot saab automaatlaenul valida ainult summa või käikude koguse; intressi ega tähtaega muuta ei saa.
+- Automaatlaen väljastatakse kohe, kui tingimused on täidetud ja fondis on piisavalt vahendeid.
+- Kui kasutajal on juba aktiivne Keskpanga laen, uut automaatlaenu ei anta; uus tavataotlus läheb adminile käsitsi ülevaatamiseks.
+- Botid kasutavad samuti automaatlaenu nii raha kui käikude jaoks.
+- Automaatlaenu tagasimakse ja intress lähevad tagasi samasse automaatfondi; ka üle tähtaja sundtagasimaksed lähevad õigesse fondi.
+- Avalikus Keskpanga vaates on näha automaatlaenu fikseeritud tingimused ja mõlema automaatfondi saadaval jääk.

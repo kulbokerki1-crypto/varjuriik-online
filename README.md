@@ -317,3 +317,11 @@ V6.33.1 parandus
 - Kui Keskpangal pole piisavalt raha, läheb põhifondi saldo lubatult miinusesse; palk makstakse mängijale ikkagi täies mahus.
 - Kui mängija on Keskpangale üle tähtaja võlgu, arvestatakse palk esmalt Keskpanga fondist välja ning suunatakse seejärel võla katteks tagasi nagu varasema võlgniku loogika järgi.
 - Palgaväljamaksed kirjutatakse Keskpanga logisse kirjena `salary_payout`.
+
+## V6.69 — targemad botid + kasiino ajalugu
+- ADMIN/OWNER näeb Kasiino lehe all eraldi kasiino statistikat ja viimaste slotimängude ajalugu (mängijad + botid).
+- Näidatakse mängude arvu, kogupanuseid, väljamakseid ja netot; uued mängud salvestatakse ajalukku.
+- Botid kontrollivad ise, kas nende haridusega on parem töökoht saadaval, ning vahetavad parema palgaga tööle.
+- Botid õpivad perioodiliselt edasi ning hariduse tõustes valivad uuesti parima saadaoleva töö.
+- Suure sularaha korral proovivad botid raha panka viia; kui pangas ruumi pole või sularaha on endiselt liiga palju, investeerivad nad sagedamini maffiasse, turvasse, relvadesse ja levelitesse.
+- Jõukamad/ründavamad botid saavad osta korraga rohkem mafiosse/turvamehi, et raha ei jääks lihtsalt sularahana röövitavaks.

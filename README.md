@@ -78,3 +78,16 @@ V6.33.1 parandus
 - Ehitusel kuvatakse valmimise kellaaeg ja järelejäänud minutid.
 - Poolelioleva või juba valmis ehitusega ei saa uut ehitushanget alustada.
 - Hanke pakkumiste kasti saab Sulge/X nupuga ilma pakkumist vastu võtmata kinni panna.
+
+## V6.39 — ööelu lepingute, reklaami ja VIP tasakaal
+- Hanked-vaates on nüüd näha turva 12h paketist alles olev kasutusaeg ning joogi- ja söögitarnija lepingu järelejäänud aeg.
+- Alla 24h jäänud tarnijal ning kuni 2h jäänud turval kuvatakse „lõpeb varsti“ hoiatus.
+- Aegunud joogi- ja söögitarnija eemaldatakse automaatselt ning ööelu vaates tekib teavitus.
+- Reklaami hinnad skaleeruvad nüüd hoone/pinna suuruse järgi. Tase 1 kestab 2h, tase 2 4h ja tase 3 8h.
+- Aktiivse reklaami juures kuvatakse tase ja järelejäänud aeg; uut kampaaniat ei saa aktiivse kampaania peale käivitada.
+- Reklaami tegelik nõudluse mõju varieerub ning kampaania võib olenevalt koha kvaliteedist, piletist ja täituvusest jääda kas plussi või miinusesse.
+- VIP-õhtu korraldus- ja külalisesineja hinnad skaleeruvad hoone suuruse järgi.
+- Baaris bändide, ööklubis DJ-de ja striptiisiklubis 18+ fiktiivsete külalisesinejate hind ei ole enam kõigil pindadel fikseeritud.
+- VIP külalise tegelik külastajate tõmme varieerub igal üritusel; ka odav esineja võib tuua kahjumi ning kallis esineja võib hea tunni korral tugevalt kasumisse jääda.
+- VIP-õhtu kestab 1h ja aktiivse VIP-i järelejäänud aeg on nähtav.
+- V6.38 ehitushanke topelttegemise kaitse, sulgemisnupp ja V6.37 klubiskoori lisamine mängija skoorile jäävad alles.

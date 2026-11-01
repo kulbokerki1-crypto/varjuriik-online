@@ -65,3 +65,10 @@ V6.33.1 parandus
 ## V6.36 muudatused
 - Musta turu ANT/KOK/JUPP ost ja müük ei küsi enam käsitsi kogust. Nupp näitab ja kasutab kohe maksimaalset võimalikku kogust vastavalt 15 min limiidile, mustale kassale ja laoseisule.
 - Avalehe nupp „Kogu firmade tulu (15⚡)” on eemaldatud.
+
+## V6.37 muudatused
+- Iga mängijale kuuluva baari, ööklubi ja striptiisiklubi klubi skoor liidetakse nüüd päriselt omaniku mängijaskoori sisse.
+- Klubi skoori muutus mõjutab kohe mängija koguskoori.
+- Kuna krüpto ostulimiit kasutab sama mängijaskoori, võimaldab suurem ööelu skoor omada vastavalt rohkem krüptot.
+- Klubi skoori ei salvestata eraldi püsiva boonusena: see arvutatakse koha hetkeseisust, seega klubi nõrgenemisel või kadumisel langeb ka mängija skoor vastavalt.
+- Olemasolevat mängijaprogressi ega ööelu andmeid ei nullita.

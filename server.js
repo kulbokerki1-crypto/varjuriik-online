@@ -58,7 +58,7 @@ const CRIMES=[
 
 
 
-// V6.36 — musta turu max-nupud ja firmade globaalse kogumisnupu eemaldus. Kõik V6.35 funktsioonid jäävad alles.
+// V6.37 — klubide skoor liidetakse päriselt omaniku mängijaskoori sisse. Kõik V6.36 funktsioonid jäävad alles.
 const NIGHT_TAX=.24, NIGHT_WITHDRAW_FEE=.08, NIGHT_DAY_MS=86400000, NIGHT_MAX_OPEN_MS=12*3600000;
 const NIGHT_PREMISES=[
 {id:'paide120',name:'Paide kesklinna keldripind',city:'Paide',area:120,cost:12000000},
@@ -456,7 +456,7 @@ function refresh(u){const now=Date.now(),step=Math.max(60000,Number(db.settings.
 function nextTurns(u){refresh(u);return Math.max(0,db.settings.turnMinutes*60000-(Date.now()-u.lastTurnAt))}
 function needTurns(u,n){refresh(u);if(u.turns<n)return false;u.turns-=n;return true}
 function progressionScore(l,max,share,minLevel=1){const level=Math.max(minLevel,Math.min(max,Number(l)||minLevel));if(level<=minLevel)return 0;const progress=(level-minLevel)/(max-minLevel);return share*Math.pow(progress,4.2)}
-function score(u){const progression=progressionScore(u.mafiaLevel,300,160e9,1)+progressionScore(u.securityLevel,300,160e9,1)+progressionScore(u.propertyLevel,100,118e9,0),troops=(Number(u.mafia||0)+Number(u.guards||0))*110,weps=Object.entries(u.weapons||{}).reduce((s,[i,q])=>s+(WEAPONS[i]?.score||0)*q,0),biz=Object.values(u.businesses||{}).reduce((s,l)=>s+l*l*100000,0);return Math.max(0,Math.floor(progression+troops+weps+biz))}
+function score(u){const progression=progressionScore(u.mafiaLevel,300,160e9,1)+progressionScore(u.securityLevel,300,160e9,1)+progressionScore(u.propertyLevel,100,118e9,0),troops=(Number(u.mafia||0)+Number(u.guards||0))*110,weps=Object.entries(u.weapons||{}).reduce((s,[i,q])=>s+(WEAPONS[i]?.score||0)*q,0),biz=Object.values(u.businesses||{}).reduce((s,l)=>s+l*l*100000,0),nightlife=(u.nightlife&&Array.isArray(u.nightlife.venues)?u.nightlife.venues:[]).reduce((s,v)=>s+nightClubScore(v),0);return Math.max(0,Math.floor(progression+troops+weps+biz+nightlife))}
 function market(x=1){return Math.max(.45,Math.min(2.5,Number(db.settings.economyMarket||1)*Number(x||1)))}
 function weaponPrice(i){if(!WEAPONS[i])return 0;if(i===0)return 0;const base=WEAPONS[i].price||0;const raw=Number(db.settings.weaponPriceOverrides?.[i]);return Math.max(1000,Math.min(250000,Math.floor(Number.isFinite(raw)?raw:base)))}
 function baseCombat(u){const cap=(u.mafia+u.guards)*2,w=Object.entries(u.weapons||{}).reduce((s,[i,q])=>s+(WEAPONS[i]?.atk||0)*Math.min(q,cap),0),d=Object.entries(u.weapons||{}).reduce((s,[i,q])=>s+(WEAPONS[i]?.def||0)*Math.min(q,cap),0);return{atk:u.mafia*(20+u.mafiaLevel*1.8)+w,def:u.guards*(22+u.securityLevel*2)+d}}

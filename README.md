@@ -325,3 +325,9 @@ V6.33.1 parandus
 - Botid õpivad perioodiliselt edasi ning hariduse tõustes valivad uuesti parima saadaoleva töö.
 - Suure sularaha korral proovivad botid raha panka viia; kui pangas ruumi pole või sularaha on endiselt liiga palju, investeerivad nad sagedamini maffiasse, turvasse, relvadesse ja levelitesse.
 - Jõukamad/ründavamad botid saavad osta korraga rohkem mafiosse/turvamehi, et raha ei jääks lihtsalt sularahana röövitavaks.
+
+
+## V6.70
+- Kasiino on täielikult Keskpangast eraldatud.
+- Mängijate ja botide slotipanused, kaotused ja võidud ei muuda enam Mängu Keskpanga saldot.
+- Kasiino statistika ja ajalugu jäävad Admin → Kasiino vaatesse alles.

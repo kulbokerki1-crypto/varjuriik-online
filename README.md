@@ -239,3 +239,10 @@ V6.33.1 parandus
 - Botid saavad aktiivseid laene oma raha/käikudega enne tähtaega tagasi maksta.
 - Üle tähtaja laen läheb botil samamoodi punasesse, saab viivist ning uus vastav tulu suunatakse võla katteks.
 - Kõik botide aktiivsed laenud ja võlglased kuvatakse samas avalikus Keskpanga nimekirjas nagu päris mängijate omad.
+
+
+## V6.59 — Ööelu tulukõver + NETO
+- Ööelu tulud skaleeruvad nüüd tugevamalt hoone suurusega: esimene 120 m² hoone saab 1.75× tulubaasi ning skaala kasvab sujuvalt kuni 7.0× 2500 m² megaklubini.
+- Täielikult optimeeritud max-hoone eesmärk on suurusjärgus kuni ~4 mld € puhaskasumit tunnis; tegelik tulemus sõltub külastajatest, piletist, personalist, tarnijatest, turvast, reklaamist, VIP-ist ja hooldusest.
+- Väiksemate hoonete tasuvust tõsteti samuti alates esimesest hoonest.
+- Tunnideklaratsioonides kuvatakse nüüd eraldi NETO pärast kõiki kulusid ja 24% maksu.

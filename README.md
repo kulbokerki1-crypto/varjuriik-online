@@ -72,3 +72,9 @@ V6.33.1 parandus
 - Kuna krüpto ostulimiit kasutab sama mängijaskoori, võimaldab suurem ööelu skoor omada vastavalt rohkem krüptot.
 - Klubi skoori ei salvestata eraldi püsiva boonusena: see arvutatakse koha hetkeseisust, seega klubi nõrgenemisel või kadumisel langeb ka mängija skoor vastavalt.
 - Olemasolevat mängijaprogressi ega ööelu andmeid ei nullita.
+
+
+## V6.38 — ehitushanke UX parandus
+- Ehitusel kuvatakse valmimise kellaaeg ja järelejäänud minutid.
+- Poolelioleva või juba valmis ehitusega ei saa uut ehitushanget alustada.
+- Hanke pakkumiste kasti saab Sulge/X nupuga ilma pakkumist vastu võtmata kinni panna.

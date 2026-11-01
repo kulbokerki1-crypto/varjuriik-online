@@ -140,3 +140,18 @@ V6.33.1 parandus
 - Aktiivse söögitarnija korral mõjutab köögipersonali piisavus teeninduse/külastajate tulemust.
 - Turvapaketid kuluvad ainult koha avatud aja jooksul ning nüüd minutipõhiselt, mitte täistundide kaupa.
 - UI näitab turval näiteks `2h 55min jäänud` ja hoiatust enne lõppu.
+
+
+## V6.47 — maffia/turva levelihinnad
+- Maffia lvl 1→300 nominaalne kogukulu on 30 000 000 000 000 € (baasturu kordajaga 1.00×).
+- Turva lvl 1→300 nominaalne kogukulu on samuti 30 000 000 000 000 €.
+- Hinnad kasvavad sujuvalt leveliga; mõlemad kasutavad sama kõverat.
+- Olemasolevad mängijate maffia- ja turvalevelid jäävad alles; muutuvad ainult edaspidiste levelite ostuhinnad.
+- Turukordaja võib tegelikku ostuhinda jooksvalt muuta.
+
+
+## V6.48 — kinnisvara levelihinnad
+- Kinnisvara lvl 1→100 nominaalne kogukulu on täpselt 30 000 000 000 000 € baasturu kordajaga 1.00×.
+- Hinnad kasvavad sujuvalt leveliga; kõrgemad levelid on oluliselt kallimad.
+- Olemasolevad kinnisvara levelid jäävad kõigil mängijatel alles; muutuvad ainult edaspidiste levelite ostuhinnad.
+- Turukordaja võib tegelikku ostuhinda jooksvalt muuta.

@@ -213,3 +213,12 @@ V6.33.1 parandus
 - Ööelu koha konto süsteemikulud (ehitus, inventar, turva, tarnijad, reklaam, koolitus, VIP jne) lähevad samuti Keskpanka.
 - Admini „Mängijate haldus“ on eraldi umbes 520 px kõrgune keritav kast; tabeli päis jääb kerides nähtavale.
 - Olemasolevat mängijate progressi ei nullita.
+
+
+## V6.56 — OWNER / admin õigused ja kontosse sisenemine
+- `OWNER_USERNAME` (vaikimisi `Erki`) hoitakse ainsa OWNER rollina; teist OWNER rolli ei saa püsima jääda.
+- Ainult OWNER on PvP-rünnakute, bounty ja spionaaži eest kaitstud. Admin on mängus rünnatav nagu tavaline mängija.
+- OWNER saab Admin → Mängijate haldus alt vajutada `Sisene kontole` ja avada ükskõik millise teise kasutaja konto ilma parooli muutmata.
+- Kontosse sisenemine logitakse audit- ja turvalogisse.
+- Teise kasutaja kontos olles kuvatakse `Tagasi OWNER kontole` nupp, mis taastab owner-sessioni.
+- Admin ei saa kasutajate kontodesse siseneda ega OWNER kontot muuta.

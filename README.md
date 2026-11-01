@@ -331,3 +331,11 @@ V6.33.1 parandus
 - Kasiino on täielikult Keskpangast eraldatud.
 - Mängijate ja botide slotipanused, kaotused ja võidud ei muuda enam Mängu Keskpanga saldot.
 - Kasiino statistika ja ajalugu jäävad Admin → Kasiino vaatesse alles.
+
+
+## V6.71
+- Kõik tööpalgad käivad nüüd läbi ühise `processSalaryDue()` funktsiooni.
+- Iga online-, offline catch-up-, mängija- ja botipalk vähendab alati Mängu Keskpanga põhifondi täpselt väljamakse summa võrra.
+- Server kontrollib kõigi kontode palku iga 15 sekundi järel, mitte ainult konto avamisel.
+- Palgaga seotud Keskpanga muudatus salvestatakse kohe, et restart ei taastaks vana fondiseisu.
+- Keskpank võib endiselt minna palkade tõttu miinusesse; palk makstakse mängijale täies mahus.

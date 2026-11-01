@@ -738,6 +738,33 @@ app.post('/api/login',(req,res)=>{const name=req.body.name;if(loginLimited(req,n
 app.post('/api/password/forgot',async(req,res)=>{const ident=String(req.body.identifier||req.body.name||'').trim().toLowerCase();const u=db.users[key(ident)]||Object.values(db.users).find(x=>String(x.email||'').toLowerCase()===ident);const generic='Kui konto ja e-mail eksisteerivad, saadeti parooli taastamise juhis.';if(!u){return res.json({message:generic})}const raw=crypto.randomBytes(32).toString('hex'),hash=crypto.createHash('sha256').update(raw).digest('hex');db.passwordResetTokens[hash]={userId:u.id,expires:Date.now()+30*60*1000,used:false};db.resetRequests[u.id]={name:u.name,time:Date.now(),status:'pending'};secLog('password_reset_requested',req,u);saveSoon();let sent=false,provider='';if(u.email){try{provider=await sendResetEmail(u,raw);sent=!!provider}catch(e){console.error('reset mail',e.message)}}if(sent){secLog('password_reset_email_sent',req,u,{provider});return res.json({message:'Parooli taastamise link saadeti e-mailile. Link kehtib 30 minutit.'})}res.json({message:u.email?'Taastamissoov salvestati, kuid e-maili saatmine pole serveris veel seadistatud. Vajadusel saab admin aidata.':'Sellel kontol pole e-maili lisatud. Taastamissoov salvestati ja vajadusel saab admin aidata.'})});
 app.post('/api/password/reset',(req,res)=>{const raw=String(req.body.token||''),nw=String(req.body.password||''),hash=crypto.createHash('sha256').update(raw).digest('hex'),r=db.passwordResetTokens[hash];if(!r||r.used||r.expires<Date.now()||nw.length<10)return res.status(400).json({error:'Taastamislink on vigane/aegunud või parool liiga lühike.'});const u=byId(r.userId);if(!u)return res.status(404).json({error:'Kontot pole.'});const h=hpw(nw);u.salt=h.salt;u.hash=h.hash;u.sessionVersion=(u.sessionVersion||1)+1;r.used=true;if(db.resetRequests[u.id])db.resetRequests[u.id].status='done';secLog('password_reset_done',req,u);saveNow();res.json({message:'Parool muudetud. Logi nüüd sisse.'})});
 app.get('/api/me',auth,(req,res)=>ok(res,req.user,{settings:db.settings}));
+// V6.72 — Üldjutuka API taastatud. V6.71 kliendis oli jutukas alles, kuid serveri /api/chat route'id puudusid.
+app.get('/api/chat',auth,(req,res)=>{
+  if(!Array.isArray(db.chat))db.chat=[];
+  const chat=db.chat.slice(-120).map(m=>({
+    id:String(m.id||''),
+    user:String(m.user||'?').slice(0,40),
+    userId:m.userId||null,
+    time:Number(m.time)||Date.now(),
+    message:String(m.message||'').slice(0,280)
+  }));
+  res.json({chat});
+});
+app.post('/api/chat',auth,(req,res)=>{
+  const u=req.user;
+  const message=String(req.body?.message||'').replace(/\s+/g,' ').trim().slice(0,280);
+  if(!message)return res.status(400).json({error:'Kirjuta sõnum.'});
+  if(!Array.isArray(db.chat))db.chat=[];
+  const now=Date.now();
+  const last=db.chat.length?db.chat[db.chat.length-1]:null;
+  if(last&&last.userId===u.id&&now-Number(last.time||0)<1200)return res.status(429).json({error:'Saadad liiga kiiresti. Proovi hetke pärast uuesti.'});
+  const item={id:crypto.randomUUID(),userId:u.id,user:u.name,time:now,message};
+  db.chat.push(item);
+  if(db.chat.length>500)db.chat=db.chat.slice(-500);
+  saveSoon();
+  io.emit('chat',{id:item.id,time:item.time});
+  res.json({ok:true,message:'Sõnum saadetud.'});
+});
 app.post('/api/education',auth,(req,res)=>{const u=req.user,e=EDU[u.education+1];if(!e)return res.status(400).json({error:'Haridus max.'});let spend=Math.max(5,Math.floor(+req.body.turns||5));spend-=spend%5;if(spend<5)spend=5;const remain=e.needTurns-(u.educationProgress||0);spend=Math.min(spend,remain);if(!needTurns(u,spend))return res.status(400).json({error:`Vaja ${spend} käiku.`});u.educationProgress=(u.educationProgress||0)+spend;let message=`Õppisid ${spend} käiku. Progress ${u.educationProgress}/${e.needTurns}.`;if(u.educationProgress>=e.needTurns){u.education++;u.educationProgress=0;message=`Haridus lõpetatud: ${e.name}.`}ok(res,u,{message})});
 app.post('/api/job',auth,(req,res)=>{const u=req.user,id=String(req.body.id||'');const j=(JOBS[u.education]||[]).find(x=>x.id===id);if(!j)return res.status(400).json({error:'See töökoht ei vasta sinu haridusele.'});u.jobId=j.id;u.lastSalaryAt=Date.now();ok(res,u,{message:`Asusid tööle: ${j.name}. Palk ${j.pay} € iga 15 minuti järel panka; kui pank on täis, läheb ülejääk sularahasse.`})});
 app.post('/api/bank',auth,(req,res)=>{const u=req.user,a=Math.floor(+req.body.amount||0);if(a<=0)return res.status(400).json({error:'Vigane summa.'});if(req.body.dir==='in'){if(a>u.cash)return res.status(400).json({error:'Sularaha puudub.'});if(u.bank+a>bankLimit(u))return res.status(400).json({error:`Pangalimiit ${bankLimit(u)} €.`});u.cash-=a;u.bank+=a}else{if(a>u.bank)return res.status(400).json({error:'Pangas pole piisavalt.'});u.bank-=a;u.cash+=a}ok(res,u)});

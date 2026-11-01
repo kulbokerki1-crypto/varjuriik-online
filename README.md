@@ -339,3 +339,11 @@ V6.33.1 parandus
 - Server kontrollib kõigi kontode palku iga 15 sekundi järel, mitte ainult konto avamisel.
 - Palgaga seotud Keskpanga muudatus salvestatakse kohe, et restart ei taastaks vana fondiseisu.
 - Keskpank võib endiselt minna palkade tõttu miinusesse; palk makstakse mängijale täies mahus.
+
+
+## V6.72 — Jutuka serveriparandus
+- Taastatud puudunud `GET /api/chat` ja `POST /api/chat` route'id.
+- Üldjutukas salvestab kuni 500 viimast sõnumit ja kuvab viimased 120.
+- Uue sõnumi järel saadetakse Socket.IO `chat` sündmus, et avatud jutukas värskenduks.
+- Lisatud kerge 1,2 s spämmikaitse sama kasutaja järjestikustele sõnumitele.
+- Kõik V6.71 palga- ja Keskpanga parandused jäid alles.

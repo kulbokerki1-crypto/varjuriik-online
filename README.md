@@ -195,3 +195,21 @@ V6.33.1 parandus
 - Pangad leht kerib jälle tavaliselt kogu lehega.
 - Admini lehe kaardid ei lukusta enam mobiili põhikerimist; pikad logid/nimekirjad võivad endiselt oma konteineris kerida.
 - V6.52 keskpanga raha- ja käigulaenud ning V6.51 käigupakkide kustutamine säilivad.
+
+
+## V6.54 — Keskpanga võlgnikud + käigupood eemaldatud
+- Käigupakkide müük on ajutiselt täielikult UI-st eemaldatud; vanu tellimusi ei näidata ega saa uusi teha. Ajalooline andmestik jääb salvestusse alles, et süsteemi saaks hiljem taastada.
+- Keskpanga vastupakkumise vastuvõtmisel väljastatakse raha/käigud automaatselt.
+- Üle tähtaja Keskpanga laen muutub punaseks ja hakkab koguma viivist.
+- Üle tähtaja rahalaenu korral suunatakse uus palk, äritulu ja peamised uued sularahatulud automaatselt Keskpanka kuni võlg on tasutud.
+- Üle tähtaja käigulaenu korral suunatakse uued genereeruvad/kingitud käigud esmalt käiguvõla katteks.
+- Uut Keskpanga laenu ei saa, kui Keskpanga võlg on üle tähtaja.
+
+
+## V6.55 — Keskpanga raharinglus + admini mängijate keritav kast
+- Maffia-, turva- ja kinnisvaralevelite kogu ostuhind läheb nüüd Mängu Keskpanka.
+- Süsteemile/NPC-le makstavad põhilised kulud (relvad, mafioosod/turvad, reisid, litsentsid, autod, tootmine, kindlustus, spioonid, äride ostud/projektid/töötajad, krüptoostud ning ööelu süsteemikulud) suunatakse Keskpanka, mitte ei kao majandusest.
+- Mängijate omavahelised maksed jäävad mängijate vahele; ainult süsteemitasud lähevad Keskpanka.
+- Ööelu koha konto süsteemikulud (ehitus, inventar, turva, tarnijad, reklaam, koolitus, VIP jne) lähevad samuti Keskpanka.
+- Admini „Mängijate haldus“ on eraldi umbes 520 px kõrgune keritav kast; tabeli päis jääb kerides nähtavale.
+- Olemasolevat mängijate progressi ei nullita.

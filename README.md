@@ -91,3 +91,11 @@ V6.33.1 parandus
 - VIP külalise tegelik külastajate tõmme varieerub igal üritusel; ka odav esineja võib tuua kahjumi ning kallis esineja võib hea tunni korral tugevalt kasumisse jääda.
 - VIP-õhtu kestab 1h ja aktiivse VIP-i järelejäänud aeg on nähtav.
 - V6.38 ehitushanke topelttegemise kaitse, sulgemisnupp ja V6.37 klubiskoori lisamine mängija skoorile jäävad alles.
+
+
+## V6.40 — tarnijad 12h paketiks
+- Joogitarnija leping kestab nüüd maksimaalselt 12 tundi.
+- Söögitarnija leping kestab nüüd maksimaalselt 12 tundi.
+- 12h täitumisel leping lõpeb ja mängija peab tegema uue hanke.
+- Uued hanke pakkumised näitavad kestuseks 12h, mitte päevade arvu.
+- Varasemad pikemad tarnijalepingud piiratakse migratsioonis maksimaalselt 12 tunnile.

@@ -133,3 +133,10 @@ V6.33.1 parandus
 - Näidatakse trendi: ↑ kasvab / → stabiilne / ↓ langeb.
 - Live arv sõltub piletihinnast, personalist, mainest, inventarist, tarnijate/turva kvaliteedist, reklaamist ja VIP-ist.
 - Avaliku ööelu tabeli avatud klubi külastajate näit kasutab sama live-arvestust.
+
+
+## V6.46 — köök + turva minutipõhiseks
+- Köögitöötaja konkursi nupp on baaris, ööklubis ja striptiisiklubis.
+- Aktiivse söögitarnija korral mõjutab köögipersonali piisavus teeninduse/külastajate tulemust.
+- Turvapaketid kuluvad ainult koha avatud aja jooksul ning nüüd minutipõhiselt, mitte täistundide kaupa.
+- UI näitab turval näiteks `2h 55min jäänud` ja hoiatust enne lõppu.

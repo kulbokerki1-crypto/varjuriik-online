@@ -1,10 +1,21 @@
-VARJURIIK V6.31 — LOOS PANKA + SUURED DIILID
+# VARJURIIK V6.32 — Ööelu test + online statistika
 
-Muudatused võrreldes V6.29-ga:
-- Loosi võiduraha laekub esmalt isiklikule pangakontole; panga täitumisel ülejääk sularahasse.
-- Lisatud uus menüü: 💼 Suured diilid.
-- Diilid nõuavad levelit, skoori, käike ja sularahas sissemakset.
-- Õnnestumisel laekub kogu väljamakse bank-first loogikaga; ebaõnnestumisel sissemakse kaob.
-- Kõrgemad diilid võimaldavad teenida oluliselt suuremaid summasid, kuid nõuded ja risk kasvavad.
-- Business-stiiliga NPC-d võivad samuti samu diile teha samade nõuete ja kuludega.
-- Olemasolevate mängijate andmete struktuuri ei nullita ega asendata.
+V6.31 baasil.
+
+## Muudatused
+- Mängijate lehel eraldi **Hetkel online** ja **Online viimase 24h jooksul** kontode arv.
+- **Suured diilid** eemaldatud täielikult.
+- Uus **🌙 Ööelu TEST** ala, ajutiselt serveripoolse parooliga `kulbok`.
+- Võimalik luua kuni 3 kohta: **baar, ööklubi või striptiisiklubi**.
+- Erinevad pinnad väikestest Eesti linnadest kuni Tallinna suure klubini.
+- NPC ehitushanked: hind, valmimisaeg ja kvaliteet.
+- Mööbli ja helitehnika pood: lauad, toolid, baaripukid, diivanid, VIP-boksid, eri võimsusega kõlarid, subwooferid, DJ-puldid, valgus ja laserid.
+- NPC turvahanked: firma, turvameeste arv, lepingu tunnid, hind ja kvaliteet.
+- Joogi- ja söögitarnijate NPC pakkumised.
+- Töötajate konkursid: baarmen, teenindaja, DJ, tantsija ning striptiisiklubil 18+ väljamõeldud esinejad.
+- Esinejate testprofiilides on mängulised välimuse/karjääri atribuudid ja kõik on selgelt täisealised.
+- Lahtiolekuajad, sissepääsuhind, avamine/sulgemine, maine, külastajad ja kassa.
+- Tulu tekib ainult valmis ja avatud kohas ning sõltub pinnast, sisustusest, helist, töötajatest, turvast, tarnijast ja mainest.
+- Kassa väljavõte läheb esmalt isiklikku panka, panga täitumisel sularahasse.
+- Igapäevased tegevused: reklaamikampaania, VIP-õhtu, personali koolitus väikese käigukuluga.
+- Olemasolevate mängijate progressi uuendus ei nulli.

@@ -108,3 +108,10 @@ V6.33.1 parandus
 - Hanke pakkumises on kohe näha kestus ja ligikaudne tunnihind.
 - Sama kestuse juures on kõrgema kvaliteediga pakkumine süsteemselt kallim; väike turukõikumine jääb alles.
 - Parem joogi-, söögi- ja turvakvaliteet parandab külastajate nõudlust ning joogi/söögi kvaliteet mõjutab ka keskmist kulutust.
+
+
+## V6.42 — hanke kestuse UI-parandus
+- Parandatud päriselt serveeritav `public/index.html`.
+- Turva-, joogi- ja söögihangete pakkumistel kuvatakse nüüd kestus 1h / 3h / 6h / 12h.
+- Pakkumise real kuvatakse kvaliteet, kestus, vajadusel turvade arv, ligikaudne €/h hind ja koguhind.
+- V6.41 NPC ööelu ja dünaamiliste hangete loogika jääb alles.

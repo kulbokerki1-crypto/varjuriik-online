@@ -452,10 +452,27 @@ function npcGameBankAct(u){
   if(pending){
     if(pending.status==='countered'){
       const amt=Math.max(1,Math.floor(Number(pending.offerAmount??pending.amount)||0)),rate=clamp(Number(pending.offerRate??pending.rate)||0,0,500),hours=clamp(Math.floor(Number(pending.offerHours??pending.hours)||24),1,720);
-      // Bot hindab vastupakkumist: mõõdukas intress ja vähemalt mõnetunnine tähtaeg on üldjuhul vastuvõetav.
-      const acceptable=rate<=35&&hours>=6&&((pending.type==='money'&&amt<=Math.max(1,Number(db.gameBank.balance||0)))||(pending.type==='turns'&&amt<=Math.max(1,Number(db.gameBank.turnsBalance||0))));
-      if(acceptable&&Math.random()<.72){try{issueGameBankLoan(pending);return true}catch(e){return false}}
-      if(!acceptable&&Math.random()<.30){pending.status='rejected_by_user';pending.respondedAt=Date.now();return true}
+      const fundOk=(pending.type==='money'&&amt<=Math.max(0,Number(db.gameBank.balance||0)))||(pending.type==='turns'&&amt<=Math.max(0,Number(db.gameBank.turnsBalance||0)));
+      const acceptable=rate<=35&&hours>=6&&fundOk;
+      const ageMs=Math.max(0,Date.now()-Number(pending.counteredAt||pending.createdAt||Date.now()));
+      pending.botCounterChecks=Math.max(0,Math.floor(Number(pending.botCounterChecks)||0))+1;
+      pending.botLastCounterCheckAt=Date.now();
+      // Bot peab vastupakkumise lõpuks alati ära otsustama, et taotlus admini nimekirja kinni ei jääks.
+      // Mõistliku pakkumise võtab ta tavaliselt vastu; kehva pakkumise lükkab tagasi.
+      // Pärast 3 kontrolli või 10 minuti möödumist tehakse sundotsus.
+      const forceDecision=pending.botCounterChecks>=3||ageMs>=10*60*1000;
+      if(acceptable&&(Math.random()<.72||forceDecision)){
+        try{issueGameBankLoan(pending);pending.botDecision='accepted';pending.botDecidedAt=Date.now();return true}
+        catch(e){
+          // Kui fond on vahepeal muutunud või väljastamine ebaõnnestub, ei jää taotlus lõputult ootele.
+          if(forceDecision){pending.status='rejected_by_user';pending.respondedAt=Date.now();pending.botDecision='rejected';pending.botDecisionReason='loan_issue_failed';return true}
+          return false;
+        }
+      }
+      if(!acceptable&&(Math.random()<.55||forceDecision)){
+        pending.status='rejected_by_user';pending.respondedAt=Date.now();pending.botDecision='rejected';pending.botDecidedAt=Date.now();return true
+      }
+      return false;
     }
     return false;
   }
@@ -500,7 +517,7 @@ function npcGameBankAct(u){
   }
   else amount=Math.min(fund,Math.max(100,npcRisky(u)?rand(500,5000):rand(200,1800)));
   if(amount<1)return false;
-  const rate=rand(5,18),hours=[24,48,72,120,168][rand(0,4)],id=String(db.nextIds.gameBankRequest++);
+  const rate=rand(5,18),hours=[1,3,6,12,24][rand(0,4)],id=String(db.nextIds.gameBankRequest++);
   db.gameBank.loanRequests[id]={id,userId:u.id,type,amount,rate,hours,status:'pending',createdAt:Date.now(),npc:true};
   for(const staff of Object.values(db.users).filter(x=>['owner','admin'].includes(x.role)))notify(staff,'admin',`${u.name} (BOT) saatis keskpanka ${type==='money'?'raha':'käikude'} laenutaotluse.`);
   db.gameBank.log.unshift({time:Date.now(),type:'central_loan_request_npc',amount,userId:u.id,user:u.name,loanType:type});db.gameBank.log=db.gameBank.log.slice(0,3000);

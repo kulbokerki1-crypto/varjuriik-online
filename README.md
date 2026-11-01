@@ -276,3 +276,17 @@ V6.33.1 parandus
 - Botid küsivad rahalaenu nüüd enamasti miljonites eurodes. Tavalised botid küsivad sageli ~2M–50M, riskialtimad botid sagedamini ~5M–100M ning harva ka 100M–350M suurusjärgus. Väga jõukas bot võib küsida kuni ~500M, kui Keskpanga fond seda võimaldab.
 - Käigulaenude botivahemikke suurendati samuti.
 - Kõik laenusummad on jätkuvalt piiratud Keskpanga reaalselt olemasoleva fondiga.
+
+
+## V6.64 — botide Keskpanga vastupakkumiste lõplik otsus
+- Bot kontrollib admini/OWNERi Keskpanga vastupakkumist oma tegevustsüklites.
+- Mõistliku pakkumise puhul võib bot selle kohe vastu võtta ja laen väljastatakse päriselt Keskpanga fondist.
+- Kehva pakkumise võib bot tagasi lükata.
+- Vastupakkumine ei jää enam lõputult ootele: hiljemalt 3 kontrolli või umbes 10 minuti järel teeb bot sundotsuse.
+- Nõustumisel muutub taotlus aktiivseks laenuks; keeldumisel kaob ootel taotluste nimekirjast ja staatus salvestub.
+
+
+## V6.65
+- Botide Keskpanga laenutaotluste tähtajad on nüüd ainult 1h, 3h, 6h, 12h või 24h.
+- Botid ei küsi enam 48h, 72h, 120h ega 168h laene.
+- V6.64 botide vastupakkumiste reaktsiooniparandus jääb alles.

@@ -115,3 +115,8 @@ V6.33.1 parandus
 - Turva-, joogi- ja söögihangete pakkumistel kuvatakse nüüd kestus 1h / 3h / 6h / 12h.
 - Pakkumise real kuvatakse kvaliteet, kestus, vajadusel turvade arv, ligikaudne €/h hind ja koguhind.
 - V6.41 NPC ööelu ja dünaamiliste hangete loogika jääb alles.
+
+## V6.43 — lepingu lõppemise hoiatused
+- Turva-, joogi- ja söögilepingutel on taas nähtav `⚠️ lõpeb varsti` hoiatus.
+- Hoiatus sõltub lepingu pikkusest: 1h → viimased 15 min; 3h → viimased 30 min; 6h → viimane 1h; 12h → viimased 2h.
+- V6.42 hanke kestuse kuvamise parandus jääb alles.

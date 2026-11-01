@@ -155,3 +155,9 @@ V6.33.1 parandus
 - Hinnad kasvavad sujuvalt leveliga; kõrgemad levelid on oluliselt kallimad.
 - Olemasolevad kinnisvara levelid jäävad kõigil mängijatel alles; muutuvad ainult edaspidiste levelite ostuhinnad.
 - Turukordaja võib tegelikku ostuhinda jooksvalt muuta.
+
+
+## V6.49
+- Mustast ärist eemaldatud täielikult vahelejäämise/kontrolli risk: ANT/KOK/JUPP müük ei tõsta enam Wanted-taset, ei konfiskeeri kaupa ega määra trahvi/vangistust.
+- Eemaldatud ka riskiga seotud annetuste plokk, sest sellel pole enam funktsiooni.
+- Must kassa, 15 minuti turuvoorud, ostu- ja müügilimiidid ning ANT/KOK/JUPP kauplemine jäävad alles.

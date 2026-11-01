@@ -417,7 +417,76 @@ function npcNightlifeAct(u){
  if(Math.random()<.18&&v.account>nightPromoCost(v,1)*2){const tier=Math.random()<.65?1:Math.random()<.85?2:3,c=nightPromoCost(v,tier);if(v.account>=c){v.account-=c;gameIncome(c,'npc_nightlife_promo',u);v.promoTier=tier;v.promoBoost=[0,1.08,1.18,1.32][tier];v.promoUntil=Date.now()+nightPromoHours(tier)*3600000;v.promoHourlyCost=Math.floor(c/nightPromoHours(tier));return true}}
  return false
 }
-function npcAct(u){refresh(u);if((u.npcStyle==='business'||u.npcStyle==='balanced'||u.npcStyle==='score')&&Math.random()<.34&&npcNightlifeAct(u))return true;if(!u.jobId){const jobs=JOBS[u.education]||[];if(jobs.length){u.jobId=jobs[rand(0,jobs.length-1)].id;u.lastSalaryAt=Date.now();return true}}
+function npcGameBankRepay(u,l,amount){
+  if(!l||l.userId!==u.id||!['active','overdue'].includes(l.status))return false;
+  const due=Math.max(0,Math.floor(Number(l.unpaid)||0));if(due<=0)return false;
+  let pay=0;
+  if(l.type==='money'){
+    // Bot hoiab osa likviidsusest igapäevaseks mänguks; ülejäägiga võib laenu varem tasuda.
+    const reserve=Math.max(250000,Math.floor(Math.max(0,Number(u.cash)||0)*.22));
+    const cashAvail=Math.max(0,Math.floor(Number(u.cash)||0)-reserve);
+    const bankAvail=Math.max(0,Math.floor(Number(u.bank)||0));
+    pay=Math.min(due,Math.max(0,Math.floor(Number(amount)||0)),cashAvail+bankAvail);
+    if(pay<=0)return false;
+    let left=pay,fromBank=Math.min(left,bankAvail);u.bank-=fromBank;left-=fromBank;
+    let fromCash=Math.min(left,cashAvail);u.cash-=fromCash;left-=fromCash;pay-=left;
+    db.gameBank.balance=(Number(db.gameBank.balance)||0)+pay;
+  }else{
+    const reserve=Math.min(1200,Math.max(150,Math.floor(Number(u.turns)||0)*.25));
+    const avail=Math.max(0,Math.floor(Number(u.turns)||0)-reserve);
+    pay=Math.min(due,Math.max(0,Math.floor(Number(amount)||0)),avail);
+    if(pay<=0)return false;
+    u.turns-=pay;db.gameBank.turnsBalance=(Number(db.gameBank.turnsBalance)||0)+pay;
+  }
+  l.unpaid=Math.max(0,due-pay);l.paid=(Number(l.paid)||0)+pay;l.lastPaymentAt=Date.now();l.lastPaymentSource='npc_manual';
+  if(l.unpaid<=0){l.unpaid=0;l.status='repaid';l.repaidAt=Date.now()}
+  db.gameBank.log.unshift({time:Date.now(),type:l.type==='money'?'central_loan_repay_money':'central_loan_repay_turns',amount:pay,userId:u.id,user:u.name,source:'npc_manual'});db.gameBank.log=db.gameBank.log.slice(0,3000);
+  return true;
+}
+function npcGameBankAct(u){
+  if(!u?.npc)return false;
+  const reqs=Object.values(db.gameBank?.loanRequests||{}).filter(r=>r.userId===u.id).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  const pending=reqs.find(r=>['pending','countered'].includes(r.status));
+  if(pending){
+    if(pending.status==='countered'){
+      const amt=Math.max(1,Math.floor(Number(pending.offerAmount??pending.amount)||0)),rate=clamp(Number(pending.offerRate??pending.rate)||0,0,500),hours=clamp(Math.floor(Number(pending.offerHours??pending.hours)||24),1,720);
+      // Bot hindab vastupakkumist: mõõdukas intress ja vähemalt mõnetunnine tähtaeg on üldjuhul vastuvõetav.
+      const acceptable=rate<=35&&hours>=6&&((pending.type==='money'&&amt<=Math.max(1,Number(db.gameBank.balance||0)))||(pending.type==='turns'&&amt<=Math.max(1,Number(db.gameBank.turnsBalance||0))));
+      if(acceptable&&Math.random()<.72){try{issueGameBankLoan(pending);return true}catch(e){return false}}
+      if(!acceptable&&Math.random()<.30){pending.status='rejected_by_user';pending.respondedAt=Date.now();return true}
+    }
+    return false;
+  }
+  const loans=Object.values(db.gameBank?.loans||{}).filter(l=>l.userId===u.id&&['active','overdue'].includes(l.status));
+  const overdue=loans.filter(l=>l.status==='overdue'&&Number(l.unpaid||0)>0);
+  if(overdue.length){
+    // Üle tähtaja bot proovib ise olemasoleva likviidsusega võlga vähendada; ülejäänu peetakse uutest tuludest kinni.
+    const l=overdue[0],budget=l.type==='money'?Math.floor((Number(u.cash||0)+Number(u.bank||0))*.65):Math.floor(Number(u.turns||0)*.65);
+    return npcGameBankRepay(u,l,budget);
+  }
+  if(loans.length){
+    // Mõnikord maksab bot aktiivset laenu enne tähtaega osaliselt või täielikult tagasi.
+    const l=loans[0];if(Math.random()<.24){const budget=l.type==='money'?Math.floor((Number(u.cash||0)+Number(u.bank||0))*.30):Math.floor(Number(u.turns||0)*.30);if(npcGameBankRepay(u,l,budget))return true}
+    return false;
+  }
+  // Uut laenu küsitakse vajaduspõhiselt, mitte igal tickil.
+  const cash=Math.max(0,Number(u.cash||0)),turns=Math.max(0,Number(u.turns||0));
+  const needMoney=cash<Math.max(400000,Math.min(25000000,Math.floor(Math.max(1,netWorth(u))*.025)));
+  const needTurns=turns<220;
+  let type=null;if(needMoney&&needTurns)type=Math.random()<.58?'money':'turns';else if(needMoney)type='money';else if(needTurns)type='turns';else if(Math.random()<.015)type=Math.random()<.6?'money':'turns';
+  if(!type)return false;
+  const fund=type==='money'?Math.max(0,Math.floor(Number(db.gameBank.balance)||0)):Math.max(0,Math.floor(Number(db.gameBank.turnsBalance)||0));if(fund<=0)return false;
+  let amount;
+  if(type==='money')amount=Math.min(fund,Math.max(250000,Math.floor(Math.max(1000000,netWorth(u))*(.015+Math.random()*.035))));
+  else amount=Math.min(fund,Math.max(100,rand(150,900)));
+  if(amount<1)return false;
+  const rate=rand(5,18),hours=[24,48,72,120,168][rand(0,4)],id=String(db.nextIds.gameBankRequest++);
+  db.gameBank.loanRequests[id]={id,userId:u.id,type,amount,rate,hours,status:'pending',createdAt:Date.now(),npc:true};
+  const owner=Object.values(db.users).find(x=>x.role==='owner');if(owner)notify(owner,'admin',`${u.name} (BOT) saatis keskpanka ${type==='money'?'raha':'käikude'} laenutaotluse.`);
+  db.gameBank.log.unshift({time:Date.now(),type:'central_loan_request_npc',amount,userId:u.id,user:u.name,loanType:type});db.gameBank.log=db.gameBank.log.slice(0,3000);
+  return true;
+}
+function npcAct(u){refresh(u);if(Math.random()<.22&&npcGameBankAct(u))return true;if((u.npcStyle==='business'||u.npcStyle==='balanced'||u.npcStyle==='score')&&Math.random()<.34&&npcNightlifeAct(u))return true;if(!u.jobId){const jobs=JOBS[u.education]||[];if(jobs.length){u.jobId=jobs[rand(0,jobs.length-1)].id;u.lastSalaryAt=Date.now();return true}}
   if((u.npcStyle==='business'||u.npcStyle==='balanced')&&npcBusinessProject(u))return true;
   const r=Math.random(),style=u.npcStyle||'balanced';
   if(style==='score'){

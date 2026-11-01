@@ -231,3 +231,11 @@ V6.33.1 parandus
 - Võlglased on eraldi punases nimekirjas koos viivise, tasumata jäägi, üle tähtaja aja ja seni tagasi makstud summaga.
 - Oma Keskpanga raha- või käigulaenu saab endiselt käsitsi osaliselt või täielikult tagasi maksta.
 - Vastupakkumise nõustumisel väljastatakse raha/käigud automaatselt ja vastav Keskpanga fond väheneb.
+
+## V6.58 — BOTIDE KESKPANGA LAENUD
+- NPC/bot-mängijad saavad nüüd taotleda Mängu Keskpangast nii rahalaenu kui käigulaenu.
+- Botitaotlused kasutavad sama Keskpanga fondi, taotluste nimekirja ja admini kinnitamise/vastupakkumise süsteemi nagu päris mängijad.
+- Bot võib admini mõistliku vastupakkumise ise vastu võtta; väljastatud summa läheb päriselt Keskpanga raha- või käigufondist maha.
+- Botid saavad aktiivseid laene oma raha/käikudega enne tähtaega tagasi maksta.
+- Üle tähtaja laen läheb botil samamoodi punasesse, saab viivist ning uus vastav tulu suunatakse võla katteks.
+- Kõik botide aktiivsed laenud ja võlglased kuvatakse samas avalikus Keskpanga nimekirjas nagu päris mängijate omad.

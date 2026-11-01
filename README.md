@@ -99,3 +99,12 @@ V6.33.1 parandus
 - 12h täitumisel leping lõpeb ja mängija peab tegema uue hanke.
 - Uued hanke pakkumised näitavad kestuseks 12h, mitte päevade arvu.
 - Varasemad pikemad tarnijalepingud piiratakse migratsioonis maksimaalselt 12 tunnile.
+
+## V6.41 — NPC ööelu + dünaamilised hanked
+- NPC-mängijad saavad nüüd oma rahaga luua ja arendada baare, ööklubisid ning striptiisiklubisid.
+- NPC-d maksavad päriselt pinna, konto, ehituse, sisustuse, personali, turva ja tarnijate eest; tasuta jooksvat raha/skoori ei anta.
+- NPC-klubide skoor arvutatakse samast klubi päris seisust nagu mängijatel, seega skoorid on erinevad ega ole käsitsi seatud ümmargused arvud.
+- Turva-, joogi- ja söögihanked võivad olla 1h, 3h, 6h või 12h.
+- Hanke pakkumises on kohe näha kestus ja ligikaudne tunnihind.
+- Sama kestuse juures on kõrgema kvaliteediga pakkumine süsteemselt kallim; väike turukõikumine jääb alles.
+- Parem joogi-, söögi- ja turvakvaliteet parandab külastajate nõudlust ning joogi/söögi kvaliteet mõjutab ka keskmist kulutust.

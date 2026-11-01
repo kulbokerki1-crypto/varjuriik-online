@@ -188,7 +188,18 @@ const JOBS={
 6:[{id:'researcher',name:'Teadur',pay:900000},{id:'chief',name:'Peaspetsialist',pay:1200000},{id:'professor',name:'Professor',pay:1600000},{id:'expert',name:'Rahvusvaheline ekspert',pay:2000000}]
 };
 const SALARY_INTERVAL=15*60000;
-function jobFor(u,id=u.jobId){return (JOBS[u.education]||[]).find(j=>j.id===id)||null}
+const GAME_TICK_MS=15*60000;
+function jobFor(u,id=u.jobId){
+  if(!id)return null;
+  // V6.74: olemasolev töökoht jääb kehtima ka pärast haridustaseme tõstmist.
+  // Otsime töökohta kõigist haridustasemetest kuni mängija praeguse tasemeni,
+  // et palgaarvestus ei katkeks vaikides pärast hariduse uuendamist.
+  for(let lvl=Math.max(0,Number(u.education)||0);lvl>=0;lvl--){
+    const j=(JOBS[lvl]||[]).find(x=>x.id===id);
+    if(j)return j;
+  }
+  return null;
+}
 function jobList(u){return JOBS[u.education]||[]}
 function estoniaDateKey(ts=Date.now()){return new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Tallinn',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(ts))}
 function ensureGangDay(g){if(!g)return;const today=estoniaDateKey();g.attackDailyDate=g.attackDailyDate||today;g.attackHistory=g.attackHistory||[];g.attackStats=g.attackStats||{};g.attackWins=g.attackWins||{};g.attackLosses=g.attackLosses||{};if(g.attackDailyDate!==today){g.attackHistory.push({date:g.attackDailyDate,attacks:{...g.attackStats},wins:{...g.attackWins},losses:{...g.attackLosses}});g.attackHistory=g.attackHistory.slice(-30);g.attackStats={};g.attackWins={};g.attackLosses={};g.attackDailyDate=today}}
@@ -670,7 +681,23 @@ function applyDebtPayment(u,amount,source='income'){
   return{paid,remaining,rows};
 }
 function creditSalaryWithDebt(u,amount){const total=Math.max(0,Math.floor(Number(amount)||0));if(total>0){db.gameBank.balance=(Number(db.gameBank.balance)||0)-total;db.gameBank.log.unshift({time:Date.now(),type:'salary_payout',amount:-total,userId:u.id,user:u.name});db.gameBank.log=db.gameBank.log.slice(0,3000)}const c=applyGameBankDebtPayment(u,total,'money','salary'),d=applyDebtPayment(u,c.remaining,'salary');if(d.remaining>0)creditBankFirst(u,d.remaining);if(c.paid>0)notify(u,'loan',`Palgast suunati ${c.paid} € automaatselt Keskpanga võla katteks.`);if(d.paid>0)notify(u,'loan',`Palgast suunati ${d.paid} € automaatselt võlgnevuses mängijapanga laenu katteks${d.remaining>0?`. Ülejäänud ${d.remaining} € laekus tavapäraselt.`:'.'}`);return{paid:c.paid+d.paid,centralPaid:c.paid,playerPaid:d.paid,remaining:d.remaining}}
-function processSalaryDue(u,now=Date.now()){const j=jobFor(u);if(!Number.isFinite(Number(u.lastSalaryAt))||u.lastSalaryAt<=0||u.lastSalaryAt>now)u.lastSalaryAt=now;if(!j){u.lastSalaryAt=now;return 0}const pays=Math.floor((now-u.lastSalaryAt)/SALARY_INTERVAL);if(pays<=0)return 0;const amount=Math.max(0,Math.floor(pays*Number(j.pay||0)));if(amount>0)creditSalaryWithDebt(u,amount);u.lastSalaryAt+=pays*SALARY_INTERVAL;return amount}
+function processSalaryDue(u,now=Date.now()){
+  let j=jobFor(u);
+  if(!Number.isFinite(Number(u.lastSalaryAt))||u.lastSalaryAt<=0||u.lastSalaryAt>now)u.lastSalaryAt=now;
+  // Kui vana/vigane jobId ei leia enam tööd, taastame mängija automaatselt
+  // tema hariduse parimale saadaolevale tööle, mitte ei jäta palka nulli.
+  if(!j&&u.jobId){
+    const jobs=(JOBS[Math.max(0,Number(u.education)||0)]||[]).slice().sort((a,b)=>(b.pay||0)-(a.pay||0));
+    if(jobs.length){u.jobId=jobs[0].id;j=jobs[0]}
+  }
+  if(!j){u.lastSalaryAt=now;return 0}
+  const pays=Math.floor((now-u.lastSalaryAt)/SALARY_INTERVAL);
+  if(pays<=0)return 0;
+  const amount=Math.max(0,Math.floor(pays*Number(j.pay||0)));
+  if(amount>0)creditSalaryWithDebt(u,amount);
+  u.lastSalaryAt+=pays*SALARY_INTERVAL;
+  return amount
+}
 function creditBusinessWithDebt(u,amount,source='business'){const total=Math.max(0,Math.floor(Number(amount)||0)),c=applyGameBankDebtPayment(u,total,'money',source),d=applyDebtPayment(u,c.remaining,source);if(d.remaining>0)u.cash=(Number(u.cash)||0)+d.remaining;if(c.paid>0)notify(u,'loan',`Äritulust suunati ${c.paid} € automaatselt Keskpanga võla katteks.`);if(d.paid>0)notify(u,'loan',`Äritulust suunati ${d.paid} € automaatselt võlgnevuses mängijapanga laenu katteks${d.remaining>0?`. Ülejäänud ${d.remaining} € jäi sulle.`:'.'}`);return{paid:c.paid+d.paid,centralPaid:c.paid,playerPaid:d.paid,remaining:d.remaining}}
 function gameBankOverdueLoans(u,type=null){return Object.values(db.gameBank?.loans||{}).filter(l=>l.userId===u.id&&l.status==='overdue'&&Number(l.unpaid||0)>0&&(!type||l.type===type)).sort((a,b)=>(a.due||0)-(b.due||0))}
 function applyGameBankDebtPayment(u,amount,type='money',source='income'){let remaining=Math.max(0,Math.floor(Number(amount)||0)),paid=0,rows=[];for(const l of gameBankOverdueLoans(u,type)){if(remaining<=0)break;const debt=Math.max(0,Math.floor(Number(l.unpaid)||0));if(!debt)continue;const x=Math.min(remaining,debt);l.unpaid=debt-x;l.paid=(Number(l.paid)||0)+x;l.lastPaymentAt=Date.now();l.lastPaymentSource=source;if(type==='money'){if(l.autoLoan)db.gameBank.autoMoneyFund=(Number(db.gameBank.autoMoneyFund)||0)+x;else db.gameBank.balance=(Number(db.gameBank.balance)||0)+x}else{if(l.autoLoan)db.gameBank.autoTurnsFund=(Number(db.gameBank.autoTurnsFund)||0)+x;else db.gameBank.turnsBalance=(Number(db.gameBank.turnsBalance)||0)+x}remaining-=x;paid+=x;rows.push({loanId:l.id,amount:x});db.gameBank.log.unshift({time:Date.now(),type:type==='money'?'central_overdue_repay_money':'central_overdue_repay_turns',amount:x,userId:u.id,user:u.name,source});if(l.unpaid<=0){l.unpaid=0;l.status='repaid';l.repaidAt=Date.now();notify(u,'loan',`Keskpanga ${type==='money'?'raha':'käigu'}laen #${l.id} on täielikult tasutud.`)}}db.gameBank.log=db.gameBank.log.slice(0,3000);return{paid,remaining,rows}}
@@ -679,9 +706,69 @@ function creditTurnsWithDebt(u,amount,source='turn_income'){const total=Math.max
 function seizeGameBankMoneyBalances(u,source='overdue_balance_seizure'){const available=Math.max(0,Math.floor(Number(u.bank)||0))+Math.max(0,Math.floor(Number(u.cash)||0));if(available<=0)return{paid:0,remaining:available};const c=applyGameBankDebtPayment(u,available,'money',source);let take=Math.max(0,Math.floor(Number(c.paid)||0));if(take>0){const fromBank=Math.min(take,Math.max(0,Math.floor(Number(u.bank)||0)));u.bank-=fromBank;take-=fromBank;const fromCash=Math.min(take,Math.max(0,Math.floor(Number(u.cash)||0)));u.cash-=fromCash;take-=fromCash;notify(u,'loan',`Keskpanga üle tähtaja võla katteks võeti sinu pangast ja sularahast kokku ${c.paid} €.`)}return c}
 function notifyLongGameBankDebt(l,u,now){if(l.status!=='overdue'||Number(l.unpaid||0)<=0)return;const overdueAt=Number(l.overdueAt||l.due||0);if(!overdueAt||now-overdueAt<72*3600000||l.notified72hAt)return;l.notified72hAt=now;const hrs=Math.floor((now-overdueAt)/3600000),unit=l.type==='money'?'€':'käiku',text=`⚠️ Pikaajaline Keskpanga võlg: ${u.name} · laen #${l.id} · ${hrs}h üle tähtaja · jääk ${Math.floor(Number(l.unpaid)||0)} ${unit}.`;for(const staff of Object.values(db.users).filter(x=>['owner','admin'].includes(x.role)))notify(staff,'admin',text,{loanId:l.id,userId:u.id,kind:'game_bank_72h_overdue'});db.gameBank.log.unshift({time:now,type:'central_loan_72h_alert',amount:Math.floor(Number(l.unpaid)||0),userId:u.id,user:u.name,loanId:l.id});db.gameBank.log=db.gameBank.log.slice(0,3000)}
 function settleGameBankLoans(){const now=Date.now(),day=86400000,daily=clamp(Number(db.settings.loanLateFeeDaily??.01),0,.10),capRate=clamp(Number(db.settings.loanLateFeeCap??.50),0,5);const seizedUsers=new Set();for(const l of Object.values(db.gameBank?.loans||{})){const u=byId(l.userId);if(!u)continue;if(l.status==='active'&&now>=Number(l.due||0)){l.status='overdue';l.overdueAt=now;l.lastLateFeeAt=now;l.lateFeeAdded=Number(l.lateFeeAdded)||0;notify(u,'loan',`Keskpanga ${l.type==='money'?'raha':'käigu'}laen #${l.id} läks üle tähtaja. Võlg on nüüd punases, lisandub viivis ning ${l.type==='money'?'pangakonto, sularaha, palk ja uus rahatulu':'uus käigutulu'} suunatakse automaatselt võla katteks.`)}if(l.status==='overdue'&&Number(l.unpaid||0)>0){if(l.type==='money'&&!seizedUsers.has(u.id)){seizeGameBankMoneyBalances(u);seizedUsers.add(u.id)}if(l.status!=='overdue'||Number(l.unpaid||0)<=0)continue;const last=Math.max(Number(l.lastLateFeeAt||l.overdueAt||l.due||now),0),days=Math.floor((now-last)/day);if(days>0){const base=Math.max(1,Math.floor(Number(l.totalDue)||Number(l.principal||0)*(1+Number(l.rate||0)/100))),cap=Math.floor(base*capRate),already=Math.max(0,Math.floor(Number(l.lateFeeAdded)||0)),room=Math.max(0,cap-already);let fee=0,debt=Math.max(0,Math.floor(Number(l.unpaid)||0));for(let i=0;i<days&&fee<room&&daily>0;i++){const add=Math.max(1,Math.floor(debt*daily)),actual=Math.min(add,room-fee);fee+=actual;debt+=actual}if(fee>0){l.unpaid+=fee;l.lateFeeAdded=already+fee;notify(u,'loan',`Keskpanga laen #${l.id}: lisandus ${fee}${l.type==='money'?' €':' käiku'} viivist. Tasumata kokku ${Math.floor(l.unpaid)}${l.type==='money'?' €':' käiku'}.`)}l.lastLateFeeAt=last+days*day}notifyLongGameBankDebt(l,u,now)}}}
+function gameTickBoundary(ts=Date.now()){return Math.floor(Number(ts||Date.now())/GAME_TICK_MS)*GAME_TICK_MS}
+function ensureGameClock(){
+  db.meta=db.meta||{};
+  if(!Number.isFinite(Number(db.meta.lastGameTickAt))||Number(db.meta.lastGameTickAt)<=0){
+    // Esmakordsel V6.74 käivitamisel ankurdame ühise kella praeguse 15-min piiri külge.
+    // Vanad kasutaja timestampid säilivad andmetes, kuid edaspidi juhib 15-min arvestusi üks kell.
+    db.meta.lastGameTickAt=gameTickBoundary(Date.now());
+  }
+  return Number(db.meta.lastGameTickAt);
+}
+function processOneGameTick(tickAt){
+  let changed=false;
+  for(const u of Object.values(db.users)){
+    if(Number(u.createdAt||0)>tickAt)continue;
+    // KÄIGUD – kõik kasutajad saavad sama globaalse ticki peal.
+    if(Number(u.turns||0)<Number(db.settings.maxNaturalTurns||3000)){
+      const gain=Math.max(0,Math.min(Number(db.settings.turnBatch||50),Number(db.settings.maxNaturalTurns||3000)-Number(u.turns||0)));
+      if(gain>0){creditTurnsWithDebt(u,gain,'global_15m_tick');changed=true}
+    }
+    u.lastTurnAt=tickAt;
+
+    // PALK – üks palk iga globaalse 15-min ticki kohta.
+    let j=jobFor(u);
+    if(!j&&u.jobId){
+      const jobs=(JOBS[Math.max(0,Number(u.education)||0)]||[]).slice().sort((a,b)=>(b.pay||0)-(a.pay||0));
+      if(jobs.length){u.jobId=jobs[0].id;j=jobs[0]}
+    }
+    if(j&&Number(j.pay||0)>0){creditSalaryWithDebt(u,Number(j.pay||0));changed=true}
+    u.lastSalaryAt=tickAt;
+
+    // WANTED/VIP/KINDLUSTUS – sama 15-min tick.
+    if(Number(u.wanted||0)>0&&Math.random()<.25){u.wanted=Math.max(0,Number(u.wanted||0)-1);changed=true}
+    if(u.vipUntil&&u.vipUntil<tickAt){u.vip=false;u.vipUntil=0;changed=true}
+    if(u.insurance?.active&&u.insurance.until<tickAt){u.insurance.active=false;changed=true}
+  }
+  // TURUD/KRÜPTO – samuti üks kord iga ühise 15-min ticki kohta.
+  db.settings.cryptoNext=tickAt;
+  db.settings.marketNext=tickAt;
+  updateCrypto();
+  updateMarket();
+  // Hoia järgmise turu/krüpto uuenduse aeg täpselt sama globaalse ticki küljes.
+  db.settings.cryptoNext=tickAt+GAME_TICK_MS;
+  db.settings.marketNext=tickAt+GAME_TICK_MS;
+  return changed;
+}
+function processGameClock(now=Date.now()){
+  ensureGameClock();
+  const currentBoundary=gameTickBoundary(now);
+  let last=Number(db.meta.lastGameTickAt||currentBoundary),ticks=0,changed=false;
+  // Offline catch-up: töötleme kõik vahele jäänud 15-min perioodid, turvalise ülempiiriga.
+  const maxCatchup=7*24*4; // kuni 7 päeva ühe käivituse kohta
+  while(last+GAME_TICK_MS<=currentBoundary&&ticks<maxCatchup){
+    last+=GAME_TICK_MS;
+    changed=processOneGameTick(last)||changed;
+    ticks++;
+  }
+  if(ticks>0){db.meta.lastGameTickAt=last;changed=true;io.emit('settings',db.settings)}
+  return{ticks,changed,nextAt:last+GAME_TICK_MS};
+}
+function nextGlobalTickMs(){ensureGameClock();return Math.max(0,Number(db.meta.lastGameTickAt)+GAME_TICK_MS-Date.now())}
 function chargeMaintenance(u){const property=PROPERTY_PRICES[u.propertyLevel]||0,troops=(u.mafia+u.guards)*250,weaponValue=Object.entries(u.weapons||{}).reduce((s,[i,q])=>s+weaponPrice(i)*q,0),biz=Object.entries(u.businesses||{}).reduce((s,[id,l])=>s+(BIZ.find(x=>x.id===id)?.base||0)*l*.01,0),fee=Math.floor(property*db.settings.maintenanceRate+troops+weaponValue*.0005+biz);u.cash=Math.max(0,u.cash-fee);return fee}
-function refresh(u){const now=Date.now(),step=Math.max(60000,Number(db.settings.turnMinutes||15)*60000);if(!Number.isFinite(Number(u.lastTurnAt))||u.lastTurnAt<=0||u.lastTurnAt>now)u.lastTurnAt=now;const n=Math.floor((now-u.lastTurnAt)/step);if(n>0){if(u.turns<db.settings.maxNaturalTurns){const gain=Math.max(0,Math.min(n*db.settings.turnBatch,db.settings.maxNaturalTurns-u.turns));creditTurnsWithDebt(u,gain,'natural_regen')}u.lastTurnAt+=n*step}processSalaryDue(u,now);refreshNightlife(u);if(now>=u.maintenanceDue){chargeMaintenance(u);u.maintenanceDue=now+86400000}}
-function nextTurns(u){refresh(u);return Math.max(0,db.settings.turnMinutes*60000-(Date.now()-u.lastTurnAt))}
+function refresh(u){const now=Date.now();processGameClock(now);refreshNightlife(u);if(now>=u.maintenanceDue){chargeMaintenance(u);u.maintenanceDue=now+86400000}}
+function nextTurns(u){refresh(u);return nextGlobalTickMs()}
 function needTurns(u,n){refresh(u);if(u.turns<n)return false;u.turns-=n;return true}
 function progressionScore(l,max,share,minLevel=1){const level=Math.max(minLevel,Math.min(max,Number(l)||minLevel));if(level<=minLevel)return 0;const progress=(level-minLevel)/(max-minLevel);return share*Math.pow(progress,4.2)}
 function score(u){const progression=progressionScore(u.mafiaLevel,300,160e9,1)+progressionScore(u.securityLevel,300,160e9,1)+progressionScore(u.propertyLevel,100,118e9,0),troops=(Number(u.mafia||0)+Number(u.guards||0))*110,weps=Object.entries(u.weapons||{}).reduce((s,[i,q])=>s+(WEAPONS[i]?.score||0)*q,0),biz=Object.values(u.businesses||{}).reduce((s,l)=>s+l*l*100000,0),nightlife=(u.nightlife&&Array.isArray(u.nightlife.venues)?u.nightlife.venues:[]).reduce((s,v)=>s+nightClubScore(v),0);return Math.max(0,Math.floor(progression+troops+weps+biz+nightlife))}
@@ -700,7 +787,7 @@ function projectCfg(bid,p){const o=db.settings.businessProjectOverrides?.[bid+'|
 function freeWeaponMap(u){let cap=Math.max(0,(Number(u.mafia||0)+Number(u.guards||0))*2),out={};const entries=Object.entries(u.weapons||{}).map(([i,q])=>[i,Number(q)||0]).sort((a,b)=>(WEAPONS[b[0]]?.price||0)-(WEAPONS[a[0]]?.price||0));for(const[i,q]of entries){const protectedQty=Math.min(q,cap);cap-=protectedQty;const loose=q-protectedQty;if(loose>0)out[i]=loose}return out}
 function insuranceQuote(u,tier='standard',days=7){const c=db.settings.insuranceTiers[tier]||db.settings.insuranceTiers.standard,base=Math.max(0,Number(c.basePrice||0));return Math.floor(base*(days/7)*market()*((u.wanted||0)>=25?1.15:1))}
 
-function pub(u){refresh(u);return{id:u.id,name:u.name,role:u.role,banned:u.banned,vip:u.vip,cash:u.cash,bank:u.bank,turns:u.turns,nextTurnsMs:nextTurns(u),serverNow:Date.now(),nextTurnAt:Date.now()+nextTurns(u),level:u.level,xp:u.xp||0,xpNeed:Math.max(50,50*Math.pow(Math.max(1,u.level),2)),education:u.education,educationName:EDU[u.education]?.name||'Puudub',educationProgress:u.educationProgress||0,educationNeed:EDU[u.education+1]?.needTurns||0,bankLimit:bankLimit(u),securityLevel:u.securityLevel,mafiaLevel:u.mafiaLevel,propertyLevel:u.propertyLevel,propertyName:PROPERTY_NAMES[u.propertyLevel]||('Kinnisvara '+u.propertyLevel),mafia:u.mafia,guards:u.guards,weapons:u.weapons,crypto:u.crypto,city:u.city,businesses:u.businesses,carLicense:u.carLicense,cars:u.cars,gangId:u.gangId,score:score(u),combat:combat(u),maintenanceDue:u.maintenanceDue,stats:u.stats,wanted:u.wanted,jailedUntil:u.jailedUntil,rep:u.rep,insurance:u.insurance,privacy:u.privacy,email:u.email,vipUntil:u.vipUntil,netWorth:netWorth(u),spies:u.spies,intelLevel:u.intelLevel,businessProjects:u.businessProjects,businessWorkers:u.businessWorkers,businessRejected:u.businessRejected||{},bodyguard:u.bodyguard,bodyguardUntil:u.bodyguardUntil,joinedAt:u.createdAt,lastActive:u.lastActive,jobId:u.jobId,jobName:jobFor(u)?.name||null,jobPay:jobFor(u)?.pay||0,nextSalaryAt:jobFor(u)?u.lastSalaryAt+SALARY_INTERVAL:null,jobs:jobList(u),production:u.production,unreadNotifications:db.notifications.filter(n=>n.userId===u.id&&!n.read).length}}
+function pub(u){refresh(u);return{id:u.id,name:u.name,role:u.role,banned:u.banned,vip:u.vip,cash:u.cash,bank:u.bank,turns:u.turns,nextTurnsMs:nextTurns(u),serverNow:Date.now(),nextTurnAt:Date.now()+nextTurns(u),level:u.level,xp:u.xp||0,xpNeed:Math.max(50,50*Math.pow(Math.max(1,u.level),2)),education:u.education,educationName:EDU[u.education]?.name||'Puudub',educationProgress:u.educationProgress||0,educationNeed:EDU[u.education+1]?.needTurns||0,bankLimit:bankLimit(u),securityLevel:u.securityLevel,mafiaLevel:u.mafiaLevel,propertyLevel:u.propertyLevel,propertyName:PROPERTY_NAMES[u.propertyLevel]||('Kinnisvara '+u.propertyLevel),mafia:u.mafia,guards:u.guards,weapons:u.weapons,crypto:u.crypto,city:u.city,businesses:u.businesses,carLicense:u.carLicense,cars:u.cars,gangId:u.gangId,score:score(u),combat:combat(u),maintenanceDue:u.maintenanceDue,stats:u.stats,wanted:u.wanted,jailedUntil:u.jailedUntil,rep:u.rep,insurance:u.insurance,privacy:u.privacy,email:u.email,vipUntil:u.vipUntil,netWorth:netWorth(u),spies:u.spies,intelLevel:u.intelLevel,businessProjects:u.businessProjects,businessWorkers:u.businessWorkers,businessRejected:u.businessRejected||{},bodyguard:u.bodyguard,bodyguardUntil:u.bodyguardUntil,joinedAt:u.createdAt,lastActive:u.lastActive,jobId:u.jobId,jobName:jobFor(u)?.name||null,jobPay:jobFor(u)?.pay||0,nextSalaryAt:jobFor(u)?(ensureGameClock()+GAME_TICK_MS):null,jobs:jobList(u),production:u.production,unreadNotifications:db.notifications.filter(n=>n.userId===u.id&&!n.read).length}}
 const byId=id=>Object.values(db.users).find(u=>u.id===id);
 const byName=name=>db.users[key(name)];
 const resolveUser=x=>byId(String(x||''))||byName(String(x||''));
@@ -821,7 +908,7 @@ app.post('/api/production/make',auth,(req,res)=>{const u=req.user,p=u.production
 app.post('/api/production/sell',auth,(req,res)=>{const u=req.user,p=u.production,stock=Math.max(0,Math.floor(p.stock||0));if(stock<=0)return res.status(400).json({error:'Valmistoodangut pole.'});const q=Math.max(1,Math.min(stock,Math.floor(+req.body.q||stock)));const gross=q*LAB_SELL_PRICE;p.stock-=q;p.totalSold=(p.totalSold||0)+q;const credit=creditBankFirst(u,gross);ok(res,u,{message:`Müüsid ${q} ühikut ${gross} € eest. Panka ${credit.toBank} €${credit.toCash?`, sularahasse ${credit.toCash} €`:''}.`})});
 app.post('/api/casino/slot',auth,(req,res)=>{const u=req.user,stake=Math.floor(Number(req.body.stake)||0);if(stake<=0)return res.status(400).json({error:'Sisesta panus.'});if(stake>u.cash)return res.status(400).json({error:'Sularaha pole piisavalt.'});u.cash-=stake;const out=slotOutcome(),payout=Math.floor(stake*out.mult);let credit={toBank:0,toCash:0};if(payout>0)credit=creditBankFirst(u,payout);u.stats=u.stats||{};u.stats.slotSpins=(u.stats.slotSpins||0)+1;u.stats.slotWagered=(u.stats.slotWagered||0)+stake;u.stats.slotWon=(u.stats.slotWon||0)+payout;logCasinoSpin(u,stake,payout,'player');const message=out.mult===0?`Slot: kaotasid ${stake} €.`:`${out.label}! Võit ${payout} € (${out.mult}×). Panka ${credit.toBank} €${credit.toCash?`, sularahasse ${credit.toCash} €`:''}.`;ok(res,u,{message,slot:{reels:out.reels,multiplier:out.mult,stake,payout,label:out.label}})});
 
-app.post('/api/crypto',auth,(req,res)=>{updateCrypto();const u=req.user,q=Math.max(1,Math.floor(+req.body.q||0)),max=Math.floor(score(u)/1000);if(req.body.dir==='buy'){if(u.crypto+q>max)return res.status(400).json({error:`Skoori järgi saad omada max ${max} krüptot.`});const cost=q*db.settings.cryptoPrice;if(u.cash<cost)return res.status(400).json({error:'Raha puudub.'});u.cash-=cost;gameIncome(cost,'crypto_purchase',u);u.crypto+=q}else{if(q>u.crypto)return res.status(400).json({error:'Krüptot pole piisavalt.'});u.crypto-=q;creditCashWithDebt(u,q*db.settings.cryptoPrice,'crypto_sale')}ok(res,u)});
+app.post('/api/crypto',auth,(req,res)=>{processGameClock();const u=req.user,q=Math.max(1,Math.floor(+req.body.q||0)),max=Math.floor(score(u)/1000);if(req.body.dir==='buy'){if(u.crypto+q>max)return res.status(400).json({error:`Skoori järgi saad omada max ${max} krüptot.`});const cost=q*db.settings.cryptoPrice;if(u.cash<cost)return res.status(400).json({error:'Raha puudub.'});u.cash-=cost;gameIncome(cost,'crypto_purchase',u);u.crypto+=q}else{if(q>u.crypto)return res.status(400).json({error:'Krüptot pole piisavalt.'});u.crypto-=q;creditCashWithDebt(u,q*db.settings.cryptoPrice,'crypto_sale')}ok(res,u)});
 app.post('/api/player-bank/create',auth,(req,res)=>{const u=req.user;if(db.playerBanks[u.id])return res.status(400).json({error:'Pank juba olemas.'});if(u.education<2)return res.status(400).json({error:'Panga loomiseks vaja vähemalt põhikooli.'});if(u.cash<100e6)return res.status(400).json({error:'Panga avamiseks pead ise panema 100M algkapitali.'});u.cash-=100e6;db.playerBanks[u.id]={owner:u.id,name:String(req.body.name||u.name+' Pank').slice(0,30),capital:100e6,rate:10,durationHours:24,active:true};ok(res,u,{message:'Pank loodud. 100M sinu sularahast läks panga kapitaliks.'})});
 app.get('/api/player-banks',auth,(req,res)=>res.json({banks:Object.values(db.playerBanks).map(b=>({...b,maxLoan:Math.max(0,Math.floor(b.capital||0))}))}));
 app.post('/api/player-bank/settings',auth,(req,res)=>{const b=db.playerBanks[req.user.id];if(!b)return res.status(404).json({error:'Panka pole.'});b.rate=clamp(+req.body.rate||b.rate,0,100);b.durationHours=clamp(Math.floor(+req.body.durationHours||b.durationHours),1,720);ok(res,req.user,{message:'Panga tingimused salvestatud.'})});
@@ -1064,5 +1151,5 @@ function npcCarBuys(){const now=Date.now();for(const [id,l] of Object.entries(db
 
 function updateMarket(){if(Date.now()<db.settings.marketNext)return;const pressure=Math.min(1,Math.abs(db.settings.marketPressure||0)/5000),dir=(Math.random()-.5)*.10+(db.settings.marketPressure>0?.015*pressure:0);db.settings.weaponMarket=clamp(db.settings.weaponMarket*(1+dir),.65,1.65);db.settings.carMarket=clamp(db.settings.carMarket*(1+(Math.random()-.5)*.04),.92,1.08);for(const u of Object.values(db.users)){for(const c of (u.cars||[])){const buy=Math.max(1,Number(c.buy||1)),cur=Math.max(buy,Number(c.market||buy*1.08)),next=Math.floor(cur*(1+(Math.random()-.5)*.08));c.market=clamp(next,Math.floor(buy*1.05),Math.floor(buy*1.40))}}for(const l of Object.values(db.carListings||{})){if(l?.car){const buy=Math.max(1,Number(l.car.buy||1)),cur=Math.max(buy,Number(l.car.market||buy*1.08)),next=Math.floor(cur*(1+(Math.random()-.5)*.08));l.car.market=clamp(next,Math.floor(buy*1.05),Math.floor(buy*1.40))}}db.settings.economyMarket=clamp(db.settings.economyMarket*(1+(Math.random()-.5)*.035),.8,1.25);db.settings.marketPressure=Math.floor((db.settings.marketPressure||0)*.25);db.settings.marketNext=Date.now()+900000;io.emit('settings',db.settings);saveSoon()}
 function decayWanted(){for(const u of Object.values(db.users)){if(u.wanted>0&&Math.random()<.25)u.wanted--;if(u.vipUntil&&u.vipUntil<Date.now()){u.vip=false;u.vipUntil=0}if(u.insurance?.active&&u.insurance.until<Date.now())u.insurance.active=false}}
-setInterval(()=>{updateCrypto();updateMarket();npcCarBuys();drawLottery();settleLoans();settleGameBankLoans();let salaryTotal=0;for(const u of Object.values(db.users)){salaryTotal+=processSalaryDue(u);refresh(u)}if(salaryTotal>0)saveSoon()},15000);setInterval(npcTick,60000);setInterval(decayWanted,15*60000);
+setInterval(()=>{const clock=processGameClock();npcCarBuys();drawLottery();settleLoans();settleGameBankLoans();for(const u of Object.values(db.users)){refreshNightlife(u);if(Date.now()>=u.maintenanceDue){chargeMaintenance(u);u.maintenanceDue=Date.now()+86400000}}if(clock.changed)saveSoon()},15000);setInterval(npcTick,60000);
 (async()=>{await initStorage();let ownerChanged=false;if(OWNER_PASSWORD&&!db.users[key(OWNER_USERNAME)]){db.users[key(OWNER_USERNAME)]=newUser(OWNER_USERNAME,OWNER_PASSWORD,'owner');ownerChanged=true}const owner=db.users[key(OWNER_USERNAME)];if(owner&&owner.role!=='owner'){owner.role='owner';ownerChanged=true}for(const u of Object.values(db.users)){if(owner&&u.id!==owner.id&&u.role==='owner'){u.role='admin';ownerChanged=true}}if(ownerChanged)await saveNow();server.listen(PORT,()=>console.log(`VARJURIIK v6.56 running on ${PORT}`))})().catch(e=>{console.error(e);process.exit(1)});

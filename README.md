@@ -347,3 +347,18 @@ V6.33.1 parandus
 - Uue sõnumi järel saadetakse Socket.IO `chat` sündmus, et avatud jutukas värskenduks.
 - Lisatud kerge 1,2 s spämmikaitse sama kasutaja järjestikustele sõnumitele.
 - Kõik V6.71 palga- ja Keskpanga parandused jäid alles.
+
+
+## V6.73 — palgaarvestuse töökoha parandus
+- Töökoht jääb palgaarvestuses kehtima ka pärast haridustaseme tõstmist.
+- Kui vana jobId on vigane/puuduv, taastab server palgaarvestuse automaatselt praeguse hariduse parimale tööle.
+- Kõik palgad lähevad endiselt Keskpanga põhifondist; Keskpank võib minna miinusesse.
+- Online/offline palgaarvestus ja 15-minutiline intervall säilivad.
+
+
+## V6.74 — ühine 15 minuti mängukell
+- Kõik 15-min arvestused kasutavad nüüd ühte globaalset serverikella.
+- Sama tick annab käigud ja palga ning teeb Wanted/VIP/kindlustuse 15-min kontrolli.
+- Krüpto ja turu 15-min uuendus käib sama ticki peal.
+- Serveri une/offline aja vahele jäänud 15-min tickid arvestatakse ärgates tagantjärele (kuni 7 päeva ühe käivituse kohta).
+- Kasutajatel pole enam eraldi palga- ja käigutaimerit; UI next tick tuleb samast globaalsest kellast.

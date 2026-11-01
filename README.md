@@ -362,3 +362,18 @@ V6.33.1 parandus
 - Krüpto ja turu 15-min uuendus käib sama ticki peal.
 - Serveri une/offline aja vahele jäänud 15-min tickid arvestatakse ärgates tagantjärele (kuni 7 päeva ühe käivituse kohta).
 - Kasutajatel pole enam eraldi palga- ja käigutaimerit; UI next tick tuleb samast globaalsest kellast.
+
+
+## V6.75 — tööpalgad 100× + botide käigueelarve
+- Kõik töökohtade palgad tõstetud täpselt 100×; senine max 2 000 000 € → 200 000 000 € iga 15 minuti järel.
+- Kõigi töökohtade omavahelised palgasuhted jäid samaks.
+- Botid hoiavad hariduse tegemisel käikude reservi ega kuluta kõiki käike õppimisele.
+- Haridusele kasutatakse korraga ainult osa vabast käigueelarvest; ülejäänu jääb ründe, kaitse, kasiino, loosi, laenu ja muude tegevuste jaoks.
+- Botid kontrollivad jätkuvalt paremat töökohta ja vahetavad sellele pärast hariduse tõusu.
+
+
+## V6.76
+- Töökohtade palgad korrigeeritud: V6.75 100× asemel nüüd 10× algsest skaalast.
+- Maksimaalne tööpalk on nüüd 20 000 000 € / 15 min.
+- Botid oskavad vajadusel raha pangast tagasi sularahasse võtta, et teha oste, arendada rünnet/kaitset ja kasutada muid süsteeme.
+- Botide senine raha panka paigutamise loogika jääb alles.

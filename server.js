@@ -179,19 +179,19 @@ const CAR_OPTIONS={
 {id:'elite',name:'Bugatti Chiron',brand:'Bugatti',model:'Chiron',engine:'8.0 W16 Quad-Turbo',power:'1103 kW',year:2021,mileage:'8 000 km',fuel:'Bensiin',drivetrain:'Nelikvedu',price:1200000,quality:'Väga hea'}]
 };
 const JOBS={
-0:[{id:'odd',name:'Juhutööline',pay:4000}],
-1:[{id:'stones',name:'Kivide korjaja põllul',pay:6000},{id:'berries',name:'Maasikakorjaja',pay:9000},{id:'helper',name:'Talutöö abiline',pay:12000},{id:'yard',name:'Hooajatööline',pay:15000}],
-2:[{id:'factory',name:'Tehasetööline',pay:15000},{id:'warehouse',name:'Laotööline',pay:27000},{id:'operator',name:'Tootmisoperaator',pay:40000},{id:'foreman',name:'Vahetuse vanem',pay:55000}],
-3:[{id:'sales',name:'Müügiesindaja',pay:55000},{id:'technician',name:'Tehnik',pay:85000},{id:'dispatcher',name:'Logistik',pay:115000},{id:'supervisor',name:'Tootmisjuht',pay:150000}],
-4:[{id:'specialist',name:'Spetsialist',pay:150000},{id:'engineer',name:'Insener',pay:230000},{id:'manager',name:'Projektijuht',pay:310000},{id:'director',name:'Osakonnajuht',pay:400000}],
-5:[{id:'senior',name:'Vanemspetsialist',pay:400000},{id:'lead',name:'Juhtivinsener',pay:560000},{id:'executive',name:'Tegevjuht',pay:720000},{id:'consultant',name:'Tippkonsultant',pay:900000}],
-6:[{id:'researcher',name:'Teadur',pay:900000},{id:'chief',name:'Peaspetsialist',pay:1200000},{id:'professor',name:'Professor',pay:1600000},{id:'expert',name:'Rahvusvaheline ekspert',pay:2000000}]
+0:[{id:'odd',name:'Juhutööline',pay:40000}],
+1:[{id:'stones',name:'Kivide korjaja põllul',pay:60000},{id:'berries',name:'Maasikakorjaja',pay:90000},{id:'helper',name:'Talutöö abiline',pay:120000},{id:'yard',name:'Hooajatööline',pay:150000}],
+2:[{id:'factory',name:'Tehasetööline',pay:150000},{id:'warehouse',name:'Laotööline',pay:270000},{id:'operator',name:'Tootmisoperaator',pay:400000},{id:'foreman',name:'Vahetuse vanem',pay:550000}],
+3:[{id:'sales',name:'Müügiesindaja',pay:550000},{id:'technician',name:'Tehnik',pay:850000},{id:'dispatcher',name:'Logistik',pay:1150000},{id:'supervisor',name:'Tootmisjuht',pay:1500000}],
+4:[{id:'specialist',name:'Spetsialist',pay:1500000},{id:'engineer',name:'Insener',pay:2300000},{id:'manager',name:'Projektijuht',pay:3100000},{id:'director',name:'Osakonnajuht',pay:400000}],
+5:[{id:'senior',name:'Vanemspetsialist',pay:400000},{id:'lead',name:'Juhtivinsener',pay:5600000},{id:'executive',name:'Tegevjuht',pay:7200000},{id:'consultant',name:'Tippkonsultant',pay:9000000}],
+6:[{id:'researcher',name:'Teadur',pay:9000000},{id:'chief',name:'Peaspetsialist',pay:12000000},{id:'professor',name:'Professor',pay:16000000},{id:'expert',name:'Rahvusvaheline ekspert',pay:20000000}]
 };
 const SALARY_INTERVAL=15*60000;
 const GAME_TICK_MS=15*60000;
 function jobFor(u,id=u.jobId){
   if(!id)return null;
-  // V6.74: olemasolev töökoht jääb kehtima ka pärast haridustaseme tõstmist.
+  // V6.76: olemasolev töökoht jääb kehtima ka pärast haridustaseme tõstmist.
   // Otsime töökohta kõigist haridustasemetest kuni mängija praeguse tasemeni,
   // et palgaarvestus ei katkeks vaikides pärast hariduse uuendamist.
   for(let lvl=Math.max(0,Number(u.education)||0);lvl>=0;lvl--){
@@ -562,12 +562,36 @@ function npcBestJob(u){
 }
 function npcCareerAct(u){
   if(npcBestJob(u))return true;
-  const next=EDU[u.education+1];if(!next||u.turns<5)return false;
+  const next=EDU[u.education+1];if(!next||u.turns<10)return false;
   const remaining=Math.max(0,Number(next.needTurns||0)-Number(u.educationProgress||0));if(remaining<=0)return false;
-  let spend=Math.min(remaining,Math.max(5,Math.min(u.turns-u.turns%5,rand(25,Math.min(500,Math.max(25,u.turns))))));spend-=spend%5;if(spend<5)return false;
-  if(!needTurns(u,spend))return false;u.educationProgress=(u.educationProgress||0)+spend;
-  if(u.educationProgress>=next.needTurns){u.education++;u.educationProgress=0;const nj=(JOBS[u.education]||[]).slice().sort((a,b)=>(b.pay||0)-(a.pay||0))[0];if(nj){u.jobId=nj.id;u.lastSalaryAt=Date.now()}}
+  const risky=npcRisky(u);
+  // V6.75: bot ei kuluta haridusele kõiki käike. Hoia reservi ja jaga käike teiste tegevuste jaoks.
+  const reserve=Math.max(risky?350:600,Math.floor((Number(u.turns)||0)*(risky?.28:.38)));
+  const spendable=Math.max(0,(Number(u.turns)||0)-reserve);
+  if(spendable<5)return false;
+  const educationBudget=Math.max(5,Math.floor(spendable*(risky?(.30+Math.random()*.20):(.22+Math.random()*.18))));
+  let spend=Math.min(remaining,educationBudget,500);
+  spend-=spend%5;
+  if(spend<5)return false;
+  if(!needTurns(u,spend))return false;
+  u.educationProgress=(u.educationProgress||0)+spend;
+  if(u.educationProgress>=next.needTurns){
+    u.education++;
+    u.educationProgress=0;
+    const nj=(JOBS[u.education]||[]).slice().sort((a,b)=>(b.pay||0)-(a.pay||0))[0];
+    if(nj){u.jobId=nj.id;u.lastSalaryAt=Date.now()}
+  }
   return true;
+}
+function npcWithdrawForSpending(u){
+  // V6.76: bot saab vajadusel pangast raha tagasi sularahasse võtta,
+  // et haridus/ostud/rünne/kaitse ei jääks ainult liiga väikese sularaha taha kinni.
+  const bank=Math.max(0,Math.floor(Number(u.bank)||0));if(bank<=0)return false;
+  const nw=Math.max(1,netWorth(u)),risky=npcRisky(u);
+  const target=Math.max(500000,Math.min(risky?150000000:75000000,Math.floor(nw*(risky?.10:.07))));
+  if(Number(u.cash||0)>=Math.floor(target*.40))return false;
+  const amt=Math.min(bank,Math.max(0,target-Math.floor(Number(u.cash)||0)));
+  if(amt<50000)return false;u.bank-=amt;u.cash=(Number(u.cash)||0)+amt;return true
 }
 function npcProtectCash(u){
   const nw=Math.max(1,netWorth(u)),risky=npcRisky(u),reserve=Math.max(100000,Math.floor(nw*(risky?.10:.05))),limit=bankLimit(u),space=Math.max(0,limit-u.bank);
@@ -582,7 +606,7 @@ function npcProtectCash(u){
 function npcCasino(u){if(!u.npc||u.cash<50000)return false;const risky=npcRisky(u),stake=Math.max(1000,Math.min(Math.floor(u.cash*(risky?(.02+Math.random()*.10):(.005+Math.random()*.025))),risky?250000000:25000000));if(stake<1000||stake>u.cash)return false;u.cash-=stake;const out=slotOutcome(),payout=Math.floor(stake*out.mult);if(payout>0)creditBankFirst(u,payout);u.stats.slotSpins=(u.stats.slotSpins||0)+1;u.stats.slotWagered=(u.stats.slotWagered||0)+stake;u.stats.slotWon=(u.stats.slotWon||0)+payout;logCasinoSpin(u,stake,payout,'bot');return true}
 function npcBounty(u){if(!u.npc||u.cash<500000)return false;const targets=Object.values(db.users).filter(t=>!t.banned&&t.id!==u.id&&t.role!=='owner');if(!targets.length)return false;const t=targets[rand(0,targets.length-1)],risky=npcRisky(u),amount=Math.max(100000,Math.min(Math.floor(u.cash*(risky?(.04+Math.random()*.12):(.01+Math.random()*.035))),500000000));if(amount>u.cash)return false;u.cash-=amount;const fee=Math.floor(amount*(db.settings.bountyFee||.25)),reward=amount-fee;gameIncome(fee,'npc_bounty_fee',u);const id=String(db.nextIds.bounty++);db.bounties[id]={id,posterId:u.id,targetId:t.id,amount,fee,reward,requiredHits:risky?rand(1,5):rand(1,2),progress:{},expiresAt:Date.now()+rand(360,4320)*60000,active:true,createdAt:Date.now()};notify(t,'bounty',`${u.name} pani sinu peale bounty. Preemia ${reward} €.`);return true}
 function npcLotteryAct(u){const L=db.settings.lottery;if(!L.active||Date.now()>=Number(L.drawAt||0)){if(Math.random()>.06)return false;const risky=npcRisky(u),base=Math.max(1000,Math.floor(Math.max(100000,u.cash)*(risky?.002:.0005))),ticketPrice=Math.max(1000,Math.min(base,risky?10000000:1000000)),maxTickets=risky?rand(500,1000000):rand(100,10000),minutes=risky?rand(30,240):rand(60,360);try{createLottery(u,{title:`${u.name} loos`,ticketPrice,maxTickets,minutes});return true}catch{return false}}const sold=Object.values(L.tickets||{}).reduce((n,v)=>n+Number(v||0),0),left=Math.max(0,Number(L.maxTickets||0)-sold);if(left<1||Number(L.ticketPrice||0)<1)return false;if(Math.random()>(npcRisky(u)?.18:.07))return false;const affordable=Math.floor(u.cash/Number(L.ticketPrice||0));if(affordable<1)return false;const q=Math.max(1,Math.min(left,affordable,npcRisky(u)?rand(1,50):rand(1,8)));const cost=q*Number(L.ticketPrice||0);u.cash-=cost;const bankPart=Math.floor(cost*.10),potPart=cost-bankPart;gameIncome(bankPart,'npc_lottery_ticket_share',u);L.pot=Number(L.pot||0)+potPart;L.bankShare=Number(L.bankShare||0)+bankPart;L.tickets[u.id]=Number(L.tickets[u.id]||0)+q;return true}
-function npcAct(u){refresh(u);const risky=npcRisky(u);if(npcBestJob(u))return true;if(Math.random()<.30&&npcCareerAct(u))return true;const cashHeavy=u.cash>Math.max(2000000,netWorth(u)*(risky?.18:.12));if((cashHeavy||Math.random()<.36)&&npcProtectCash(u))return true;if(Math.random()<(risky?.42:.22)&&npcGameBankAct(u))return true;if(npcLotteryAct(u))return true;if(Math.random()<(risky?.14:.035)&&npcCasino(u))return true;if(Math.random()<(risky?.08:.02)&&npcBounty(u))return true;if((u.npcStyle==='business'||u.npcStyle==='balanced'||u.npcStyle==='score')&&Math.random()<.34&&npcNightlifeAct(u))return true;if(!u.jobId){const jobs=(JOBS[u.education]||[]).slice().sort((a,b)=>(b.pay||0)-(a.pay||0));if(jobs.length){u.jobId=jobs[0].id;u.lastSalaryAt=Date.now();return true}}
+function npcAct(u){refresh(u);const risky=npcRisky(u);if(npcBestJob(u))return true;if(Math.random()<.22&&npcCareerAct(u))return true;if((Number(u.cash||0)<500000||Number(u.cash||0)<netWorth(u)*.025)&&npcWithdrawForSpending(u))return true;const cashHeavy=u.cash>Math.max(2000000,netWorth(u)*(risky?.18:.12));if((cashHeavy||Math.random()<.42)&&npcProtectCash(u))return true;if(Math.random()<.20&&(npcLevelUp(u)||npcBuyTroops(u)||npcBuyWeapon(u)))return true;if(Math.random()<(risky?.42:.22)&&npcGameBankAct(u))return true;if(npcLotteryAct(u))return true;if(Math.random()<(risky?.14:.035)&&npcCasino(u))return true;if(Math.random()<(risky?.08:.02)&&npcBounty(u))return true;if((u.npcStyle==='business'||u.npcStyle==='balanced'||u.npcStyle==='score')&&Math.random()<.34&&npcNightlifeAct(u))return true;if(!u.jobId){const jobs=(JOBS[u.education]||[]).slice().sort((a,b)=>(b.pay||0)-(a.pay||0));if(jobs.length){u.jobId=jobs[0].id;u.lastSalaryAt=Date.now();return true}}
   if((u.npcStyle==='business'||u.npcStyle==='balanced')&&npcBusinessProject(u))return true;
   const r=Math.random(),style=u.npcStyle||'balanced';
   if(style==='score'){
@@ -710,7 +734,7 @@ function gameTickBoundary(ts=Date.now()){return Math.floor(Number(ts||Date.now()
 function ensureGameClock(){
   db.meta=db.meta||{};
   if(!Number.isFinite(Number(db.meta.lastGameTickAt))||Number(db.meta.lastGameTickAt)<=0){
-    // Esmakordsel V6.74 käivitamisel ankurdame ühise kella praeguse 15-min piiri külge.
+    // Esmakordsel V6.75 käivitamisel ankurdame ühise kella praeguse 15-min piiri külge.
     // Vanad kasutaja timestampid säilivad andmetes, kuid edaspidi juhib 15-min arvestusi üks kell.
     db.meta.lastGameTickAt=gameTickBoundary(Date.now());
   }

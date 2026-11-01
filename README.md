@@ -246,3 +246,14 @@ V6.33.1 parandus
 - Täielikult optimeeritud max-hoone eesmärk on suurusjärgus kuni ~4 mld € puhaskasumit tunnis; tegelik tulemus sõltub külastajatest, piletist, personalist, tarnijatest, turvast, reklaamist, VIP-ist ja hooldusest.
 - Väiksemate hoonete tasuvust tõsteti samuti alates esimesest hoonest.
 - Tunnideklaratsioonides kuvatakse nüüd eraldi NETO pärast kõiki kulusid ja 24% maksu.
+
+## V6.60 — loosid, riskialtimad botid ja uued botinimed
+- Loosi saab nüüd korraldada iga mängija; botid võivad samuti loose korraldada.
+- Korraldaja määrab pileti hinna, piletite koguarvu ja kestuse. Fikseeritud auhinda ei sisestata.
+- Võidufond tekib ainult reaalselt müüdud piletitest: 90% müügitulust läheb võidufondi ja 10% Mängu Keskpanka.
+- Botid võivad aktiivsele loosile pileteid osta.
+- Loosivõitja valik ei ehita enam miljonite piletitega massiivset piletinimekirja; valik on kaalutud piletite arvu järgi.
+- Pileti ostu promptis Tühista ei osta enam tasuta/1 piletit; server lükkab 0 või vigase koguse tagasi.
+- Osa botte on nüüd riskialtimad: nad võivad sagedamini kasutada Keskpanga laenu, kasiinot ja bounty süsteemi. Kõik botid ei käitu nii.
+- Mängija maine (rep) ja Wanted ei ole enam 100/1000 piiri külge lukustatud; väärtus võib edasi kasvada või langeda.
+- Botinimed uuendatud: uutes nimedes ei ole X-tähte ega numbreid. Vanad NPC-kontod nimetatakse deploy'l automaatselt ümber, säilitades nende ID, raha, vara, levelid, laenud ja muu progressi.

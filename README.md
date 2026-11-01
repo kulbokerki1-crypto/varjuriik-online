@@ -309,3 +309,11 @@ V6.33.1 parandus
 - Automaatlaenude tagasimaksed lähevad tagasi õigesse automaatfondi; tavalaenude omad Keskpanga põhifondi.
 - 72 tundi üle tähtaja olnud tasumata laen saadab ühe eraldi hoiatuse nii OWNERile kui ADMINile.
 - 72h hoiatus lisatakse ka Keskpanga logisse ja seda ei saadeta iga serveritsükliga uuesti.
+
+
+## V6.68 — palgad Mängu Keskpangast
+- Kõik tööpalgad makstakse nüüd Mängu Keskpanga põhifondist.
+- Iga palga väljamakse vähendab Keskpanga rahafondi sama summa võrra.
+- Kui Keskpangal pole piisavalt raha, läheb põhifondi saldo lubatult miinusesse; palk makstakse mängijale ikkagi täies mahus.
+- Kui mängija on Keskpangale üle tähtaja võlgu, arvestatakse palk esmalt Keskpanga fondist välja ning suunatakse seejärel võla katteks tagasi nagu varasema võlgniku loogika järgi.
+- Palgaväljamaksed kirjutatakse Keskpanga logisse kirjena `salary_payout`.

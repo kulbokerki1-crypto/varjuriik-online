@@ -263,3 +263,16 @@ V6.33.1 parandus
 - Admin näeb sama rahafondi, käigufondi, laenutaotlusi, aktiivseid laene ja logi nagu OWNER.
 - Uue mängija või boti Keskpanga laenutaotluse teade saadetakse nüüd nii OWNERile kui kõigile adminidele.
 - Keskpanga serveri õigused jäid OWNER + ADMIN tasemele; OWNERi erikaitsed ei muutunud.
+
+## V6.62
+- Pangad lehel on Avalikud Keskpanga laenud eraldi keritavas kastis.
+- Võlglaste nimekiri on samuti eraldi keritavas kastis.
+- Kastid on mobiilis puutetundliku inertskerimisega ja ei venita kogu Pangad lehte lõputult pikaks.
+
+
+## V6.63 — Keskpanga laenude puhastus + suuremad botilaenud
+- Avalikus Keskpanga aktiivsete laenude nimekirjas kuvatakse ainult laenud, mille staatus on active/overdue ja tasumata jääk > 0. Täielikult tasutud laen kaob kohe nimekirjast.
+- Võlglaste punases nimekirjas on ainult päriselt üle tähtaja ja tasumata jäägiga laenud; kogu võla + viivise tasumisel kaob kirje sealt kohe.
+- Botid küsivad rahalaenu nüüd enamasti miljonites eurodes. Tavalised botid küsivad sageli ~2M–50M, riskialtimad botid sagedamini ~5M–100M ning harva ka 100M–350M suurusjärgus. Väga jõukas bot võib küsida kuni ~500M, kui Keskpanga fond seda võimaldab.
+- Käigulaenude botivahemikke suurendati samuti.
+- Kõik laenusummad on jätkuvalt piiratud Keskpanga reaalselt olemasoleva fondiga.

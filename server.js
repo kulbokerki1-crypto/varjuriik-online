@@ -479,8 +479,26 @@ function npcGameBankAct(u){
   if(!type)return false;
   const fund=type==='money'?Math.max(0,Math.floor(Number(db.gameBank.balance)||0)):Math.max(0,Math.floor(Number(db.gameBank.turnsBalance)||0));if(fund<=0)return false;
   let amount;
-  if(type==='money'){const rm=npcRisky(u)?(.035+Math.random()*.085):(.015+Math.random()*.035);amount=Math.min(fund,Math.max(250000,Math.floor(Math.max(1000000,netWorth(u))*rm)))}
-  else amount=Math.min(fund,Math.max(100,npcRisky(u)?rand(300,2200):rand(150,900)));
+  if(type==='money'){
+    // Botid küsivad nüüd mängu majandusele mõistlikumaid summasid: enamasti miljoneid,
+    // riskialtimad/jõukamad botid vahel kümneid või sadu miljoneid. Fond on alati kõva piir.
+    const nw=Math.max(0,Math.floor(netWorth(u))),risky=npcRisky(u),roll=Math.random();
+    let target;
+    if(risky){
+      if(roll<.12) target=rand(100000000,350000000);       // harv suur risk
+      else if(roll<.48) target=rand(20000000,100000000);  // kümned miljonid
+      else target=rand(5000000,30000000);                 // tavaline riskiboti laen
+    }else{
+      if(roll<.05) target=rand(50000000,120000000);       // harv suurem katse
+      else if(roll<.35) target=rand(10000000,50000000);
+      else target=rand(2000000,15000000);                 // tavaliselt mõned miljonid
+    }
+    // Väga jõukad botid võivad küsida proportsionaalselt rohkem, kuid mitte üle 500M korraga.
+    const wealthBoost=Math.floor(nw*(risky?(.015+Math.random()*.035):(.005+Math.random()*.015)));
+    target=Math.max(target,Math.min(500000000,wealthBoost));
+    amount=Math.min(fund,Math.max(1000000,target));
+  }
+  else amount=Math.min(fund,Math.max(100,npcRisky(u)?rand(500,5000):rand(200,1800)));
   if(amount<1)return false;
   const rate=rand(5,18),hours=[24,48,72,120,168][rand(0,4)],id=String(db.nextIds.gameBankRequest++);
   db.gameBank.loanRequests[id]={id,userId:u.id,type,amount,rate,hours,status:'pending',createdAt:Date.now(),npc:true};
@@ -824,7 +842,7 @@ app.post('/api/business/project-collect',auth,(req,res)=>{const u=req.user,b=BIZ
 function gameBankPublicState(u){
   const requests=Object.values(db.gameBank.loanRequests||{}).filter(x=>x.userId===u.id).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
   const loans=Object.values(db.gameBank.loans||{}).filter(x=>x.userId===u.id).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-  const publicLoans=Object.values(db.gameBank.loans||{}).filter(x=>['active','overdue'].includes(x.status)).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).map(x=>({id:x.id,userName:byId(x.userId)?.name||'?',type:x.type,principal:x.principal||0,rate:x.rate||0,totalDue:x.totalDue||0,unpaid:x.unpaid||0,paid:x.paid||0,createdAt:x.createdAt||0,due:x.due||0,status:x.status,lateFeeAdded:x.lateFeeAdded||0,overdueAt:x.overdueAt||0}));
+  const publicLoans=Object.values(db.gameBank.loans||{}).filter(x=>['active','overdue'].includes(x.status)&&Number(x.unpaid||0)>0).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).map(x=>({id:x.id,userName:byId(x.userId)?.name||'?',type:x.type,principal:x.principal||0,rate:x.rate||0,totalDue:x.totalDue||0,unpaid:x.unpaid||0,paid:x.paid||0,createdAt:x.createdAt||0,due:x.due||0,status:x.status,lateFeeAdded:x.lateFeeAdded||0,overdueAt:x.overdueAt||0}));
   const debtors=publicLoans.filter(x=>x.status==='overdue'&&Number(x.unpaid||0)>0);
   return{balance:Math.max(0,Math.floor(db.gameBank.balance||0)),turnsBalance:Math.max(0,Math.floor(db.gameBank.turnsBalance||0)),requests,loans,publicLoans,debtors};
 }

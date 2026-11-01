@@ -60,3 +60,8 @@ V6.33.1 parandus
 - Mustast kassast saab jätkuvalt otse annetada.
 - Ehituse valmimise, 12h turvapaketi lõppemise ja VIP-õhtu lõppemise kohta tekib ööelu vaates nähtav teavitus.
 - Tunnideklaratsioonide loogika jääb: iga täitunud tund lukustub eraldi ning tuleb esitada ja 24% maks tasuda enne uut avamisperioodi.
+
+
+## V6.36 muudatused
+- Musta turu ANT/KOK/JUPP ost ja müük ei küsi enam käsitsi kogust. Nupp näitab ja kasutab kohe maksimaalset võimalikku kogust vastavalt 15 min limiidile, mustale kassale ja laoseisule.
+- Avalehe nupp „Kogu firmade tulu (15⚡)” on eemaldatud.

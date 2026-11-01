@@ -58,7 +58,7 @@ const CRIMES=[
 
 
 
-// V6.35 — avalik ööelu, klubi skoor, 15 min must turg ja UI koonduuendus. Kõik olemasoleva mängu andmed jäävad alles.
+// V6.36 — musta turu max-nupud ja firmade globaalse kogumisnupu eemaldus. Kõik V6.35 funktsioonid jäävad alles.
 const NIGHT_TAX=.24, NIGHT_WITHDRAW_FEE=.08, NIGHT_DAY_MS=86400000, NIGHT_MAX_OPEN_MS=12*3600000;
 const NIGHT_PREMISES=[
 {id:'paide120',name:'Paide kesklinna keldripind',city:'Paide',area:120,cost:12000000},

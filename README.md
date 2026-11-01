@@ -257,3 +257,9 @@ V6.33.1 parandus
 - Osa botte on nüüd riskialtimad: nad võivad sagedamini kasutada Keskpanga laenu, kasiinot ja bounty süsteemi. Kõik botid ei käitu nii.
 - Mängija maine (rep) ja Wanted ei ole enam 100/1000 piiri külge lukustatud; väärtus võib edasi kasvada või langeda.
 - Botinimed uuendatud: uutes nimedes ei ole X-tähte ega numbreid. Vanad NPC-kontod nimetatakse deploy'l automaatselt ümber, säilitades nende ID, raha, vara, levelid, laenud ja muu progressi.
+
+## V6.61 — admini Keskpanga vaate parandus
+- Admini leht laadib nüüd Keskpanga andmed automaatselt samamoodi nagu OWNERi leht.
+- Admin näeb sama rahafondi, käigufondi, laenutaotlusi, aktiivseid laene ja logi nagu OWNER.
+- Uue mängija või boti Keskpanga laenutaotluse teade saadetakse nüüd nii OWNERile kui kõigile adminidele.
+- Keskpanga serveri õigused jäid OWNER + ADMIN tasemele; OWNERi erikaitsed ei muutunud.

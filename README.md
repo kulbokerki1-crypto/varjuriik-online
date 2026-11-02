@@ -377,3 +377,10 @@ V6.33.1 parandus
 - Maksimaalne tööpalk on nüüd 20 000 000 € / 15 min.
 - Botid oskavad vajadusel raha pangast tagasi sularahasse võtta, et teha oste, arendada rünnet/kaitset ja kasutada muid süsteeme.
 - Botide senine raha panka paigutamise loogika jääb alles.
+
+
+## V6.77
+- Krüpto on Keskpangast täielikult eraldatud.
+- Krüpto osturaha ei lähe enam Keskpanka.
+- Krüpto müügitulu ei lähe Keskpanga võla automaatseks katteks; see läheb otse mängija sularahasse.
+- Krüpto hinnataimer ja omamislimiit jäävad alles.

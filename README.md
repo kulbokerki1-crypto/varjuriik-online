@@ -391,3 +391,10 @@ V6.33.1 parandus
 - Eemaldatud avaliku Keskpanga API nulli-clamp (`Math.max(0, ...)`) põhifondi rahasaldolt.
 - Keskpanga põhifond võib jätkuvalt minna miinusesse; automaatfondid ja käigufond jäävad eraldi ning neid ei muudeta selle parandusega.
 - Mängijate progressi ei muudeta ega nullita.
+
+
+## V6.79 — palgad 5× kõrgemaks
+- Kõik töökohtade palgad tõstetud veel 5× võrreldes V6.78 kavandatud 10× skaalaga.
+- Maksimaalne palk: 100 000 000 € / 15 min.
+- Parandatud ka Osakonnajuhi ja Vanemspetsialisti ekslikult madalad 400 000 € palgad; uus skaala on ühtlane.
+- Mängijate olemasolevat progressi ei muudeta.

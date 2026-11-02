@@ -179,13 +179,13 @@ const CAR_OPTIONS={
 {id:'elite',name:'Bugatti Chiron',brand:'Bugatti',model:'Chiron',engine:'8.0 W16 Quad-Turbo',power:'1103 kW',year:2021,mileage:'8 000 km',fuel:'Bensiin',drivetrain:'Nelikvedu',price:1200000,quality:'Väga hea'}]
 };
 const JOBS={
-0:[{id:'odd',name:'Juhutööline',pay:40000}],
-1:[{id:'stones',name:'Kivide korjaja põllul',pay:60000},{id:'berries',name:'Maasikakorjaja',pay:90000},{id:'helper',name:'Talutöö abiline',pay:120000},{id:'yard',name:'Hooajatööline',pay:150000}],
-2:[{id:'factory',name:'Tehasetööline',pay:150000},{id:'warehouse',name:'Laotööline',pay:270000},{id:'operator',name:'Tootmisoperaator',pay:400000},{id:'foreman',name:'Vahetuse vanem',pay:550000}],
-3:[{id:'sales',name:'Müügiesindaja',pay:550000},{id:'technician',name:'Tehnik',pay:850000},{id:'dispatcher',name:'Logistik',pay:1150000},{id:'supervisor',name:'Tootmisjuht',pay:1500000}],
-4:[{id:'specialist',name:'Spetsialist',pay:1500000},{id:'engineer',name:'Insener',pay:2300000},{id:'manager',name:'Projektijuht',pay:3100000},{id:'director',name:'Osakonnajuht',pay:400000}],
-5:[{id:'senior',name:'Vanemspetsialist',pay:400000},{id:'lead',name:'Juhtivinsener',pay:5600000},{id:'executive',name:'Tegevjuht',pay:7200000},{id:'consultant',name:'Tippkonsultant',pay:9000000}],
-6:[{id:'researcher',name:'Teadur',pay:9000000},{id:'chief',name:'Peaspetsialist',pay:12000000},{id:'professor',name:'Professor',pay:16000000},{id:'expert',name:'Rahvusvaheline ekspert',pay:20000000}]
+0:[{id:'odd',name:'Juhutööline',pay:200000}],
+1:[{id:'stones',name:'Kivide korjaja põllul',pay:300000},{id:'berries',name:'Maasikakorjaja',pay:450000},{id:'helper',name:'Talutöö abiline',pay:600000},{id:'yard',name:'Hooajatööline',pay:750000}],
+2:[{id:'factory',name:'Tehasetööline',pay:750000},{id:'warehouse',name:'Laotööline',pay:1350000},{id:'operator',name:'Tootmisoperaator',pay:2000000},{id:'foreman',name:'Vahetuse vanem',pay:2750000}],
+3:[{id:'sales',name:'Müügiesindaja',pay:2750000},{id:'technician',name:'Tehnik',pay:4250000},{id:'dispatcher',name:'Logistik',pay:5750000},{id:'supervisor',name:'Tootmisjuht',pay:7500000}],
+4:[{id:'specialist',name:'Spetsialist',pay:7500000},{id:'engineer',name:'Insener',pay:11500000},{id:'manager',name:'Projektijuht',pay:15500000},{id:'director',name:'Osakonnajuht',pay:20000000}],
+5:[{id:'senior',name:'Vanemspetsialist',pay:20000000},{id:'lead',name:'Juhtivinsener',pay:28000000},{id:'executive',name:'Tegevjuht',pay:36000000},{id:'consultant',name:'Tippkonsultant',pay:45000000}],
+6:[{id:'researcher',name:'Teadur',pay:45000000},{id:'chief',name:'Peaspetsialist',pay:60000000},{id:'professor',name:'Professor',pay:80000000},{id:'expert',name:'Rahvusvaheline ekspert',pay:100000000}]
 };
 const SALARY_INTERVAL=15*60000;
 const GAME_TICK_MS=15*60000;

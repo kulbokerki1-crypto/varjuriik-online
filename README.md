@@ -384,3 +384,10 @@ V6.33.1 parandus
 - Krüpto osturaha ei lähe enam Keskpanka.
 - Krüpto müügitulu ei lähe Keskpanga võla automaatseks katteks; see läheb otse mängija sularahasse.
 - Krüpto hinnataimer ja omamislimiit jäävad alles.
+
+
+## V6.78 — Keskpanga miinussaldo Panganduse vaates
+- Pangad → Mängu Keskpank näitab nüüd sama päris põhifondi saldot nagu Admini Keskpanga vaade, ka siis kui saldo on negatiivne.
+- Eemaldatud avaliku Keskpanga API nulli-clamp (`Math.max(0, ...)`) põhifondi rahasaldolt.
+- Keskpanga põhifond võib jätkuvalt minna miinusesse; automaatfondid ja käigufond jäävad eraldi ning neid ei muudeta selle parandusega.
+- Mängijate progressi ei muudeta ega nullita.

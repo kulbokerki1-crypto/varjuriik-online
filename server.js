@@ -1050,7 +1050,7 @@ function gameBankPublicState(u){
   const loans=Object.values(db.gameBank.loans||{}).filter(x=>x.userId===u.id).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
   const publicLoans=Object.values(db.gameBank.loans||{}).filter(x=>['active','overdue'].includes(x.status)&&Number(x.unpaid||0)>0).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).map(x=>({id:x.id,userName:byId(x.userId)?.name||'?',type:x.type,principal:x.principal||0,rate:x.rate||0,totalDue:x.totalDue||0,unpaid:x.unpaid||0,paid:x.paid||0,createdAt:x.createdAt||0,due:x.due||0,status:x.status,lateFeeAdded:x.lateFeeAdded||0,overdueAt:x.overdueAt||0}));
   const debtors=publicLoans.filter(x=>x.status==='overdue'&&Number(x.unpaid||0)>0);
-  return{balance:Math.max(0,Math.floor(db.gameBank.balance||0)),turnsBalance:Math.max(0,Math.floor(db.gameBank.turnsBalance||0)),autoMoneyFund:Math.max(0,Math.floor(db.gameBank.autoMoneyFund||0)),autoTurnsFund:Math.max(0,Math.floor(db.gameBank.autoTurnsFund||0)),autoLoan:{...(db.gameBank.autoLoan||{})},requests,loans,publicLoans,debtors};
+  return{balance:Math.floor(Number(db.gameBank.balance)||0),turnsBalance:Math.max(0,Math.floor(db.gameBank.turnsBalance||0)),autoMoneyFund:Math.max(0,Math.floor(db.gameBank.autoMoneyFund||0)),autoTurnsFund:Math.max(0,Math.floor(db.gameBank.autoTurnsFund||0)),autoLoan:{...(db.gameBank.autoLoan||{})},requests,loans,publicLoans,debtors};
 }
 function activeGameBankLoansFor(u){return Object.values(db.gameBank?.loans||{}).filter(l=>l.userId===u.id&&['active','overdue'].includes(l.status)&&Number(l.unpaid||0)>0)}
 function issueAutoGameBankLoan(u,type,amount){

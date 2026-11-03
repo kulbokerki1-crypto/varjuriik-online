@@ -398,3 +398,17 @@ V6.33.1 parandus
 - Maksimaalne palk: 100 000 000 € / 15 min.
 - Parandatud ka Osakonnajuhi ja Vanemspetsialisti ekslikult madalad 400 000 € palgad; uus skaala on ühtlane.
 - Mängijate olemasolevat progressi ei muudeta.
+
+
+## V6.80 — parandused ja kasutatavus
+- Bounty aegub päriselt ning aegunud bounty ei saa enam välja maksta.
+- Spiooni palkamine: Soome 5 / Ukraina 10 / Vene 15 käiku; teise mängija spioneerimine alati 25 käiku.
+- Botide haridus ja töökohad arenevad aktiivsemalt ning botid ei vali kõik sama kõrgeima palgaga ametit.
+- Töökoha palgatekst parandatud: palk läheb esmalt panka, panga limiidi täitumisel sularahasse.
+- Versioonitekstid V6.80.
+- Ööelu 24% deklaratsioonimaks laekub Keskpanka ainult ühe korra.
+- Ööelu piletihinna nõudlus sõltub asukohast/pinnast; kallimates kohtades võib normaalhind ulatuda ~130k-ni, umbes 2× normaalhinna juures nõudlus kukub nulli.
+- Ööelu teavitusi saab ühekaupa või korraga kustutada.
+- Avalehe kõrvalkulud näitavad detailset jaotust, kogusummat, tähtaega ja võimalikku aresti.
+- Kõrvalkulud saab ise tasuda; tähtajal võetakse esmalt pangast, siis sularahast. Puudujäägist tekib võlg ja pangalaekumiste arest kuni tasumiseni.
+- Töödeldud Keskpanga laenutaotluse kirje saab ise kustutada; vanad töödeldud kirjed eemaldatakse 7 päeva järel.

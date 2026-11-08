@@ -96,3 +96,12 @@
 - Teadet saab märkida loetuks; see ei tühista trahvi ega võlga.
 - Teated salvestuvad mängija autoäri andmetesse ja püsivad lehe värskendamisel.
 - Varasemad mängijad ja progress säilivad.
+
+
+## v6.95 — Auto omahind ja kulude jälgimine
+- Iga uue auto ostmisel salvestatakse eraldi ostuhind, transport ja registreerimiskulu.
+- Iga tasutud diagnostika, remont ja kombineeritud tuuning lisatakse konkreetse auto kulukontole.
+- Minu autod vaates kuvatakse kulude jaotus, kogukulu, minimaalne tasuv müügihind ja võrdlus ideaalse turuhinnaga.
+- Varasemate autode puhul näidatakse ainult teadaolevat ostuhinda ja tähistatakse mittetäielik kulude ajalugu, mitte ei mõelda vanu kulusid välja. Edasised kulud salvestatakse.
+- Garaaži laiendused, esindusoksjonid ja muud ettevõtte üldkulud ei lisandu suvaliselt ühe auto kuludesse.
+- Olemasolevad kasutajakontod ja autod ei nullitu.

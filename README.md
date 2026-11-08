@@ -1,3 +1,12 @@
+# VARJURIIK v6.90 — autoäri kasutusmugavus ja kombineeritav tuuning
+
+- Õueplatsi ja garaaži laienduse järgmine **täpne hind** on näha juba nupul. Server ja kasutajaliides kasutavad sama arvutusreeglit.
+- Kõik margioksjonid saab ühe vajutusega peita/avada, nimekiri on eraldi keritav; iga mark on eraldi avatav, avalikud pakkumised ja võitjad säilivad.
+- Iga auto juures on põhjalik tuuningupaneel: kirjeldus, üksikhind, juba paigaldatud detailid ja valitud paketi koguhind.
+- Saad korraga valida mitu tuuningut, kinnitada ostu ja tasuda ühe tehinguna **ainult autoäri kontolt**. Stage 1/Stage 2 ei saa üheaegselt valida; elektriautole ei pakuta turbot ega sportväljalaset.
+- Varasema versiooni autode tehnilised andmed ja mängijate progress säilivad. Vanale autole ei lisata automaatselt uusi tuuninguid.
+- Varasem v6.89 NPC 0–15% hinnapakkumiste süsteem ja 24% autoäri raha väljavõtu tasu jäävad alles.
+
 # VARJURIIK v6.83 — autokeskuse stabiilsus ja avalikud oksjonid
 
 - Autokeskus ei kao enam 15-sekundilise mängijaprofiili värskenduse järel.
@@ -41,3 +50,17 @@
 - Uue auto esinduslepingu juures on uue auto esinduse sisseostuhind ning soovituslik müügihind.
 - Hinnad on **mängusisesed indikatiivsed hinnangud**, mitte päris Eesti autoturu reaalajas pakkumised.
 - Olemasolevad mängijad, garaažid, lepingud ja autode seisukord säilivad; hinda arvutatakse serveris jooksvalt.
+
+
+## V6.88 — NPC kasutatud autode müügihinna kriitiline parandus
+- Parandatud auto seisukorraprotsendi teisendamine NPC ostuhinna arvutuses. Varasem valem jagas protsendi valesti 100-ga ja vähendas lubatud müügihinda ligikaudu 100 korda.
+- NPC hinnalävi arvestab nüüd seisukorda 0.28–1.00 suhtarvuna. Autoäri, oksjonid ja mängijate salvestatud andmed jäävad muutmata.
+- Näiteks korraliku 2008 Volkswagen Golfi 20 000 € müügihind ei jää enam selle valemi vea taha.
+
+
+## V6.89 — NPC autode hinnapakkumised
+- Autoäri NPC teeb müügiks siduva pakkumise **arvestuslikust turuväärtusest (market)**, mitte ekslikult diagnoosist või ideaalse seisukorra eraldi hinnast.
+- NPC kaupleb juhuslikult 0–15% alla turuväärtuse. Näiteks 200 000 € auto korral pakub NPC 170 000–200 000 €.
+- Mängija näeb hinda enne müüki ning võib nõustuda või loobuda. Pakkumine säilib viis minutit, et klõpsides uut juhuslikku pakkumist kohe ei saaks.
+- Müügi kinnitamisel saab soovi korral auto veatuks kuulutada; varjatud vigade teadlik peitmine võib endiselt põhjustada trahvi ja tehingu tagasipööramise.
+- Kogu müügitulu läheb autoäri pangakontole. Olemasolevaid kontosid ja autosid ei lähtestata.

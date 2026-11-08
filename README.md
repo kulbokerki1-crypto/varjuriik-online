@@ -72,3 +72,10 @@
 - Mängija näeb hinda enne müüki ning võib nõustuda või loobuda. Pakkumine säilib viis minutit, et klõpsides uut juhuslikku pakkumist kohe ei saaks.
 - Müügi kinnitamisel saab soovi korral auto veatuks kuulutada; varjatud vigade teadlik peitmine võib endiselt põhjustada trahvi ja tehingu tagasipööramise.
 - Kogu müügitulu läheb autoäri pangakontole. Olemasolevaid kontosid ja autosid ei lähtestata.
+
+
+## V6.92 — muutuv kasutatud autode turg
+- Botid lisavad iga 8–14 minuti järel korraga 3–6 uut, juhuslike andmetega kasutatud autot (kui turul on vaba ruumi).
+- Turul hoitakse umbes 35–55 aktiivset kuulutust. Vanemad kuulutused aeguvad 2–5 tunni jooksul ja osa vanemaid kuulutusi asendatakse uue partiiga.
+- Ostetud auto kaob kohe turult ega teki automaatselt sama sõidukina tagasi. Igal uuel autol on uus ID, mudel, aasta, läbisõit, asukoht, hind ja võimalikud peidetud rikked.
+- Varasemad mängijate autod, garaažid, kontod, laenud ja esinduslepingud säilivad. Vanu kuulutusi ei kustutata uuenduse käivitamisel korraga, vaid lisatakse neile aegumisaeg.

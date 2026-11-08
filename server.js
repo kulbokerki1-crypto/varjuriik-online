@@ -982,10 +982,52 @@ function autoTick(){
   }
   w.priceMigrationV691=true;
  }
- if(!w.nextRefresh||now>=w.nextRefresh){
-  while(w.used.length<35){const row=AUTO_BRANDS[rand(0,AUTO_BRANDS.length-1)];w.used.push(autoNewCar(row,true))}
-  w.used=w.used.slice(-65);w.nextRefresh=now+20*60000;
+ // v6.92: the used-car market is an evolving collection of uniquely identified listings.
+ // Existing offers keep their identity and hidden faults until purchased or expired.
+ if(!w.marketRotationV692){
+  for(const c of w.used){
+   if(!Number.isFinite(Number(c.createdAt)))c.createdAt=now;
+   if(!Number.isFinite(Number(c.listingExpiresAt)))c.listingExpiresAt=now+rand(120,300)*60000;
+  }
+  w.marketRotationV692=true;
  }
+ let marketChanged=false;
+ const existingCount=w.used.length;
+ w.used=w.used.filter(c=>!(Number(c.listingExpiresAt)>0&&now>=Number(c.listingExpiresAt)));
+ if(w.used.length!==existingCount)marketChanged=true;
+ // Seed an empty/new market with varied used cars; never clone the car that was sold.
+ if(w.used.length<35){
+  const missing=35-w.used.length;
+  for(let i=0;i<missing;i++){
+   const candidates=AUTO_BRANDS.filter(r=>!w.used.slice(-7).some(c=>c.brand===r.brand));
+   const rows=candidates.length?candidates:AUTO_BRANDS;
+   const c=autoNewCar(rows[rand(0,rows.length-1)],true);
+   c.listingExpiresAt=now+rand(120,300)*60000;
+   w.used.push(c);
+  }
+  marketChanged=true;
+ }
+ // Refresh in batches. A listing can go unsold for hours, then leave the market.
+ if(!w.npcNext||now>=w.npcNext){
+  const batch=rand(3,6);
+  // Retire some stale offers, but do not immediately erase recently listed cars.
+  const eligible=w.used.filter(c=>now-Number(c.createdAt||now)>=45*60000)
+   .sort((a,b)=>Number(a.createdAt||0)-Number(b.createdAt||0));
+  for(const c of eligible.slice(0,Math.min(batch,Math.max(0,w.used.length-35)))){
+   w.used.splice(w.used.findIndex(x=>x.id===c.id),1);marketChanged=true;
+  }
+  for(let i=0;i<batch&&w.used.length<55;i++){
+   const recent=new Set(w.used.slice(-8).map(c=>c.brand));
+   const candidates=AUTO_BRANDS.filter(r=>!recent.has(r.brand));
+   const rows=candidates.length?candidates:AUTO_BRANDS;
+   const c=autoNewCar(rows[rand(0,rows.length-1)],true);
+   c.listingExpiresAt=now+rand(120,300)*60000;
+   w.used.push(c);marketChanged=true;
+  }
+  w.npcNext=now+rand(8,14)*60000;
+  marketChanged=true;
+ }
+ if(marketChanged)saveSoon();
  for(const b of AUTO_BRANDS){
   let a=w.auctions[b.brand];
   if(!a){a={brand:b.brand,end:now+8*3600000,holder:'',until:0,bids:[],starting:Math.max(500000,Math.floor(b.base*4)),lastResult:null};w.auctions[b.brand]=a}
@@ -1007,10 +1049,7 @@ function autoTick(){
    a.bids=[];
   }
  }
- if(!w.npcNext||now>=w.npcNext){
-  if(w.used.length>15)w.used.splice(rand(0,w.used.length-1),1);
-  const row=AUTO_BRANDS[rand(0,AUTO_BRANDS.length-1)];w.used.push(autoNewCar(row,true));w.npcNext=now+rand(4,12)*60000;
- }
+
 }
 function autoErr(res,message){return res.status(400).json({error:message})}
 function autoAccountCredit(u,amount){autoState(u).balance+=Math.max(0,Math.floor(amount));}

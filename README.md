@@ -105,3 +105,12 @@
 - Varasemate autode puhul näidatakse ainult teadaolevat ostuhinda ja tähistatakse mittetäielik kulude ajalugu, mitte ei mõelda vanu kulusid välja. Edasised kulud salvestatakse.
 - Garaaži laiendused, esindusoksjonid ja muud ettevõtte üldkulud ei lisandu suvaliselt ühe auto kuludesse.
 - Olemasolevad kasutajakontod ja autod ei nullitu.
+
+
+## V6.96 – lihtne Keskpanga statistika
+- OWNER/admin Keskpanga juures kokkupandav „Keskpanga statistika“ plokk.
+- Viimase 24 h ja 7 päeva laekumised, väljamaksed, vahe ning peamised tulu-/kululiigid.
+- Raha ei liigutata; kuvatakse olemasoleva logi põhjal arvestatud summasid.
+- Käigu- ja taotluste logid on euroraportist väljas; vanade logide puudulikkus on märgitud.
+- Admini Keskpangast tehtavad väljamaksed ja raha likvideerimine salvestatakse nüüd samuti logisse.
+- Olemasolev andmebaas ja mängijate progress jäävad puutumata.

@@ -1,3 +1,11 @@
+# VARJURIIK v6.91
+
+- Margipõhise esindusoksjoni võitja saab osta kõiki sama margi uusi mudeleid.
+- Uute autode mudelid ja sisseostu/müügihind eraldi loendis.
+- Oksjonite mobiilne kerimine parandatud.
+- NPC kasutatud autode ostuhinnad seatud ideaalse turuhinna suhtes realistlikuks; olemasolevad turukuulutused korrigeeritakse ühekordselt.
+- Mängija vara, raha ja progress jäävad alles.
+
 # VARJURIIK v6.90 — autoäri kasutusmugavus ja kombineeritav tuuning
 
 - Õueplatsi ja garaaži laienduse järgmine **täpne hind** on näha juba nupul. Server ja kasutajaliides kasutavad sama arvutusreeglit.

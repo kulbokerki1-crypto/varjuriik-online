@@ -16,3 +16,28 @@
 - Autoäri kontole ise sissemakseid teha ei saa: keeld nii kliendivaates kui serveri API-s.
 - Väljavõtmine säilib, 24% summast kantakse Mängu Keskpanka.
 - Autoäri tulud saavad endiselt kontot suurendada; diagnostika, remont ja tuuning kasutavad selle saldot.
+
+
+## V6.85 — autoäri arveldab ainult oma pangakontolt
+- Esimese garaaži ost ja mõlemad laiendused makstakse ainult autoäri kontolt.
+- Kasutatud ja uute autode ost, transport ja registreerimine makstakse ainult autoäri kontolt.
+- Margiesinduse avaliku oksjoni pakkumised broneeritakse autoäri kontolt, kaotajale vabastatakse broneering sinna tagasi. Varem isiklikust rahast tehtud pakkumiste tagastuse ühilduvus säilib.
+- Diagnostika, remont ja tuuning olid juba autoäri kontopõhised ning jäävad selliseks.
+- Autoäri pettusetrahve ei võeta enam mängija isiklikust sularahast.
+- Autoäri müügitulud laekuvad autoäri kontole. Ise sissemakseid teha ei saa; väljavõttel 24% Keskpanka.
+- Iga mängija ühekordne 1 000 000 € stardikapital ning senine progress säilivad.
+- Vana (autokeskuse-eelne) autoostu süsteem ei muutu.
+
+
+## v6.86 — Reisimise paigutus
+- Ettevõtted vaates on Reisimine viidud pärast kasutatud autode turgu.
+- Reisimise kaart hõlmab nüüd kogu rea laiuse ega katkesta autokeskuse ja turu järjestust.
+- Mänguloogika, mängijate andmed ja maksed muutmata.
+
+
+## V6.87 – autode soovituslik müügihind
+- Kasutatud autode juures näidatakse soovituslikku müügihinda ideaalses seisukorras. Hinnang võtab arvesse mudeli, väljalaskeaasta ja läbisõidu, mitte varjatud rikkeid.
+- Enda autode juures on samuti soovituslik hind, mida kasutatakse NPC müügihinna sisestamisel lähtepunktina.
+- Uue auto esinduslepingu juures on uue auto esinduse sisseostuhind ning soovituslik müügihind.
+- Hinnad on **mängusisesed indikatiivsed hinnangud**, mitte päris Eesti autoturu reaalajas pakkumised.
+- Olemasolevad mängijad, garaažid, lepingud ja autode seisukord säilivad; hinda arvutatakse serveris jooksvalt.

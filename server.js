@@ -968,6 +968,13 @@ function autoIdealPrice(c){
  const tuningFactor=1+Math.min(0.18,Math.max(0,Number(c.tuning)||0)*.025);
  return Math.max(15000, Math.round(newRecommended*depreciation*kmFactor*tuningFactor/1000)*1000, Math.ceil((Number(c.market)||0)*1.12/1000)*1000);
 }
+// V6.93: dynamic diagnostics prices tied to vehicle value and age, never a flat 12 000 €.
+function autoDiagnosticPrice(c){
+ const ideal=autoIdealPrice(c), age=Math.max(0,2026-(Number(c.year)||2026));
+ return Math.max(1500,Math.min(150000,Math.round((2000+ideal*.012+age*240)/500)*500));
+}
+// A consistent market benchmark; listing price is not automatically the fair value.
+function autoNpcFairValue(c){return Math.max(1,Math.floor(autoIdealPrice(c)))}
 function autoNewCar(row,used=true,city){const now=Date.now(),year=used?rand(2003,2024):2026,age=2026-year,km=used?rand(20000,360000):0,base=row.base,price=used?Math.max(12000,Math.floor((base*2.55)*Math.max(.09,Math.pow(.915,age))*Math.max(.70,1-Math.max(0,km-50000)/1600000)*(.58+Math.random()*.32))):Math.floor(base*2);const faults=used?AUTO_FAULTS.filter(()=>Math.random()<(.10+age*.012)).map(([name,severity])=>({name,severity,repair:Math.max(1200,Math.floor(price*severity*(.5+Math.random())))})):[];return{id:crypto.randomUUID(),autoV2:true,name:`${row.brand} ${row.model}`,brand:row.brand,model:row.model,year,mileage:km+' km',km,city:city||AUTO_CITIES[rand(0,AUTO_CITIES.length-1)],buy:price,market:price,quality:used?'Kasutatud':'Uus',faults,diagnosed:false,condition:Math.max(15,100-faults.length*rand(7,14)),tuning:0,registered:!used,description:used?['Sõidab hästi, väiksed kasutusjäljed.','Müüja sõnul korralik, soovitatav üle vaadata.','Vajab veidi hoolt, hind vastav.','Hooldusajalugu osaline.'][rand(0,3)]:'Uhiuus esinduse auto',createdAt:now}}
 function autoTick(){
  const w=autoWorld(),now=Date.now();
@@ -1060,8 +1067,8 @@ function autoHistory(u,message){const a=autoState(u);a.history.unshift({time:Dat
 // Hind lukustub 5 minutiks, et nuppu korrates ei saaks parimat juhuarvu valida.
 function autoNpcOffer(c){
  const now=Date.now(),existing=c.npcSaleOffer;
- if(existing&&Number.isSafeInteger(existing.amount)&&existing.amount>0&&existing.expiresAt>now&&existing.base===Math.max(1,Math.floor(Number(c.market)||Number(c.buy)||1)))return existing;
- const base=Math.max(1,Math.floor(Number(c.market)||Number(c.buy)||1));
+ if(existing&&Number.isSafeInteger(existing.amount)&&existing.amount>0&&existing.expiresAt>now&&existing.base===autoNpcFairValue(c))return existing;
+ const base=autoNpcFairValue(c);
  const discount=crypto.randomInt(0,16); // 0..15 protsenti
  const amount=Math.max(1,Math.round(base*(100-discount)/100));
  c.npcSaleOffer={base,amount,discount,expiresAt:now+5*60000};
@@ -1075,7 +1082,12 @@ function autoSaleToNpc(u,c,offer){
   a.fines+=fine;
   const paid=Math.min(a.balance,fine);a.balance-=paid;gameIncome(paid,'auto_fraud_fine',u);
   delete c.npcSaleOffer;
-  autoHistory(u,`Pettus avastati! Auto tagastati, tagasiost ja trahv ${fine} € (${fine-paid} € jäi võlaks).`);
+  const unpaid=fine-paid;
+  const alert={id:crypto.randomUUID(),time:Date.now(),car:c.name,fine,paid,unpaid,message:`🚨 PETTUS AVASTATUD! ${c.name}: trahv ${fine.toLocaleString('et-EE')} €, kohe tasutud ${paid.toLocaleString('et-EE')} €, võlg ${unpaid.toLocaleString('et-EE')} €. Auto müügitehing tühistati.`};
+  if(!Array.isArray(a.fraudAlerts))a.fraudAlerts=[];
+  a.fraudAlerts.unshift(alert);a.fraudAlerts=a.fraudAlerts.slice(0,20);
+  autoHistory(u,alert.message);
+  notify(u,'auto_fraud',alert.message,{fraudAlertId:alert.id,fine,unpaid,car:c.name});
   return {error:'Ostja avastas varjatud vea! Auto tagastati, ostuhind jäi müüjale maksmata ja määrati trahv.',fine,returned:true};
  }
  autoAccountCredit(u,price);
@@ -1083,13 +1095,58 @@ function autoSaleToNpc(u,c,offer){
  autoHistory(u,`NPC ostis ${c.name}: ${price} € autoäri kontole (kauples ${offer.discount}%).`);
  return {message:`NPC ostis auto ${price} € eest (${offer.discount}% alla arvestusliku turuväärtuse). Raha laekus autoäri kontole.`};
 }
-app.get('/api/auto-world',auth,(req,res)=>{autoTick();const u=req.user,a=autoState(u),w=autoWorld();res.json({account:a,capacity:autoSlots(u),occupied:autoOccupied(u),expansionPrices:{yard:autoExpansionPrice(a,'yard'),garage:autoExpansionPrice(a,'garage')},cities:AUTO_CITIES,used:w.used.map(c=>({...c,faults:undefined,condition:undefined,description:c.description,idealPrice:autoIdealPrice(c),registration:autoRegistration(c),transport:autoTransport(c.city,a.city)})),auctions:Object.values(w.auctions).map(x=>({brand:x.brand,end:x.end,starting:x.starting,top:x.bids.reduce((m,b)=>Math.max(m,b.amount),0),myBid:x.bids.find(b=>b.userId===u.id)?.amount||0,holder:byId(x.holder)?.name||'',mine:x.holder===u.id&&x.until>Date.now(),until:x.until,status:x.holder&&x.until>Date.now()?'contract':'auction',bids:[...x.bids].sort((a,b)=>b.amount-a.amount).map(b=>({name:byId(b.userId)?.name||'Endine mängija',amount:b.amount,time:b.time||0})),lastResult:x.lastResult||null})),owned:autoOwned(u).map(c=>({...c,idealPrice:autoIdealPrice(c),tuneOptions:autoTuneOptions(c),faults:c.diagnosed?c.faults:undefined})),brands:AUTO_BRANDS.flatMap(r=>autoDealerRows(r.brand)),now:Date.now()})});
+// NPC checks player-created used-car listings every 2–4 minutes. No invisible instant sales.
+function autoNpcListingsTick(){
+ const now=Date.now();let changed=false;
+ for(const u of Object.values(db.users||{}))for(const c of autoOwned(u)){
+  const listing=c.autoListing;
+  if(!listing||listing.status!=='active'||now<Number(listing.nextAt||0))continue;
+  const ideal=autoNpcFairValue(c), bid=Math.max(1,Math.round(ideal*(100-crypto.randomInt(0,16))/100));
+  if(listing.ask<=bid){
+   // Buyer accepts the seller's asking price, with possible hidden-defect penalties.
+   const offer={amount:listing.ask,discount:Math.max(0,Math.round((1-listing.ask/ideal)*100))};
+   c.claimHealthy=!!listing.claimHealthy;
+   const result=autoSaleToNpc(u,c,offer);
+   if(!result.error){notify(u,'car',`NPC ostis sinu ${c.name} kuulutuse hinnaga ${listing.ask.toLocaleString('et-EE')} €. Raha laekus autoäri kontole.`)}
+   else {delete c.autoListing;notify(u,'car',`${c.name}: ${result.error}`)}
+  }else{
+   listing.counterOffer=bid;listing.counterAt=now;listing.nextAt=now+rand(2,4)*60000;
+   notify(u,'car',`NPC tegi sinu ${c.name} autole vastupakkumise ${bid.toLocaleString('et-EE')} € (küsisid ${listing.ask.toLocaleString('et-EE')} €).`);
+  }
+  changed=true;
+ }
+ if(changed)saveSoon();
+}
+app.post('/api/auto-world/list',auth,(req,res)=>{
+ const u=req.user,c=autoOwned(u).find(x=>x.id===req.body.id),ask=Math.floor(Number(req.body.price));
+ if(!c)return autoErr(res,'Seda autot ei leitud.');
+ if(c.autoListing?.status==='active')return autoErr(res,'Auto on juba müügis.');
+ if(!Number.isSafeInteger(ask)||ask<1)return autoErr(res,'Sisesta korrektne müügihind.');
+ c.autoListing={status:'active',ask,claimHealthy:req.body.claimHealthy===true,listedAt:Date.now(),nextAt:Date.now()+rand(2,4)*60000,counterOffer:0,counterAt:0};
+ autoHistory(u,`Panid ${c.name} müüki hinnaga ${ask} €. NPC kontrollib kuulutust 2–4 minuti jooksul.`);
+ ok(res,u,{message:'Kuulutus avaldatud. NPC vaatab auto üle umbes 2–4 minuti jooksul.'});
+});
+app.post('/api/auto-world/unlist',auth,(req,res)=>{
+ const u=req.user,c=autoOwned(u).find(x=>x.id===req.body.id);
+ if(!c||c.autoListing?.status!=='active')return autoErr(res,'Aktiivset kuulutust ei leitud.');
+ delete c.autoListing;ok(res,u,{message:'Auto kuulutus eemaldatud.'});
+});
+app.post('/api/auto-world/accept-counter',auth,(req,res)=>{
+ const u=req.user,c=autoOwned(u).find(x=>x.id===req.body.id),l=c?.autoListing;
+ if(!c||l?.status!=='active'||!Number.isSafeInteger(l.counterOffer)||l.counterOffer<=0)return autoErr(res,'NPC kehtivat pakkumist ei leitud.');
+ const amount=l.counterOffer;c.claimHealthy=!!l.claimHealthy;
+ const result=autoSaleToNpc(u,c,{amount,discount:Math.max(0,Math.round((1-amount/autoNpcFairValue(c))*100))});
+ if(result.error){delete c.autoListing;saveSoon();return res.status(400).json(result)}
+ ok(res,u,{message:`Võtsid NPC pakkumise vastu: ${amount} €. Raha autoäri kontol.`});
+});
+app.post('/api/auto-world/fraud-ack',auth,(req,res)=>{const a=autoState(req.user),id=String(req.body.id||'');if(!Array.isArray(a.fraudAlerts))a.fraudAlerts=[];const alert=a.fraudAlerts.find(x=>x.id===id);if(!alert)return autoErr(res,'Teadet ei leitud.');alert.acknowledged=true;ok(res,req.user,{message:'Pettuseteade märgitud loetuks. Trahv ja võlg jäävad alles.'})});
+app.get('/api/auto-world',auth,(req,res)=>{autoTick();const u=req.user,a=autoState(u),w=autoWorld();res.json({account:a,capacity:autoSlots(u),occupied:autoOccupied(u),expansionPrices:{yard:autoExpansionPrice(a,'yard'),garage:autoExpansionPrice(a,'garage')},cities:AUTO_CITIES,used:w.used.map(c=>({...c,faults:undefined,condition:undefined,description:c.description,idealPrice:autoIdealPrice(c),registration:autoRegistration(c),transport:autoTransport(c.city,a.city)})),auctions:Object.values(w.auctions).map(x=>({brand:x.brand,end:x.end,starting:x.starting,top:x.bids.reduce((m,b)=>Math.max(m,b.amount),0),myBid:x.bids.find(b=>b.userId===u.id)?.amount||0,holder:byId(x.holder)?.name||'',mine:x.holder===u.id&&x.until>Date.now(),until:x.until,status:x.holder&&x.until>Date.now()?'contract':'auction',bids:[...x.bids].sort((a,b)=>b.amount-a.amount).map(b=>({name:byId(b.userId)?.name||'Endine mängija',amount:b.amount,time:b.time||0})),lastResult:x.lastResult||null})),owned:autoOwned(u).map(c=>({...c,idealPrice:autoIdealPrice(c),diagnosticPrice:autoDiagnosticPrice(c),tuneOptions:autoTuneOptions(c),faults:c.diagnosed?c.faults:undefined})),brands:AUTO_BRANDS.flatMap(r=>autoDealerRows(r.brand)),now:Date.now()})});
 app.post('/api/auto-world/garage',auth,(req,res)=>{const u=req.user,a=autoState(u),city=String(req.body.city||'');if(a.city)return autoErr(res,'Garaaž on juba olemas.');if(!AUTO_CITIES.includes(city))return autoErr(res,'Vali Eesti linn.');const cost=300000;if(!autoAccountCanPay(a,cost))return autoErr(res,`Garaaži ostuks vaja ${cost} € autoäri kontol.`);a.balance-=cost;gameIncome(cost,'auto_garage_purchase',u);a.city=city;autoHistory(u,`Ostsid garaaži: ${city}.`);ok(res,u,{message:`Garaaž asub nüüd linnas ${city}. Õueplats 3 autot ja garaaž 1 auto.`})});
 app.post('/api/auto-world/expand',auth,(req,res)=>{const u=req.user,a=autoState(u),type=String(req.body.type||'');if(!a.city)return autoErr(res,'Osta esmalt garaaž.');if(!['yard','garage'].includes(type))return autoErr(res,'Vigane laiendus.');const current=a[type],cost=autoExpansionPrice(a,type);if(!autoAccountCanPay(a,cost))return autoErr(res,`Laiendus maksab ${cost} € autoäri kontolt.`);a.balance-=cost;gameIncome(cost,'auto_garage_expansion',u);a[type]++;ok(res,u,{message:`Laiendus valmis! ${type==='yard'?'Õueplatsi':'Garaaži'} kohti: ${a[type]}. Maksis ${cost} €.`})});
 app.post('/api/auto-world/bank',auth,(req,res)=>{const u=req.user,a=autoState(u),amount=Math.floor(Number(req.body.amount));if(!a.city)return autoErr(res,'Vaja garaaži.');if(!Number.isSafeInteger(amount)||amount<1)return autoErr(res,'Sisesta korrektne summa.');if(req.body.dir==='in')return autoErr(res,'Autoäri kontole ei saa ise raha sisse kanda. Kontot täiendavad autoäri tulud.');if(req.body.dir==='out'){if(a.balance<amount)return autoErr(res,'Autoäri kontol pole piisavalt raha.');const tax=Math.floor(amount*.24);a.balance-=amount;u.cash+=amount-tax;gameIncome(tax,'auto_business_withdrawal_24pct',u);return ok(res,u,{message:`Võtsid välja ${amount-tax} €. 24% (${tax} €) läks Keskpanka.`})}return autoErr(res,'Vigane toiming.')});
 app.post('/api/auto-world/bid',auth,(req,res)=>{autoTick();const u=req.user,a=autoState(u),w=autoWorld(),brand=String(req.body.brand||''),auction=w.auctions[brand],amount=Math.floor(Number(req.body.amount));if(!a.city)return autoErr(res,'Esinduslepingu pakkumiseks on vaja garaaži.');if(!auction||auction.holder&&auction.until>Date.now())return autoErr(res,'Selle margi esindusleping on juba välja antud. Uus oksjon algab pärast lepingu lõppu.');if(Date.now()>=auction.end)return autoErr(res,'Oksjon lõppenud.');if(!Number.isSafeInteger(amount)||amount<auction.starting||amount<=auction.bids.reduce((m,b)=>Math.max(m,b.amount),0))return autoErr(res,'Pakkumine peab ületama senise kõrgeima pakkumise ja alghinna.');const prev=auction.bids.find(x=>x.userId===u.id);const legacy=!!prev&&prev.source!=='autoTrade';const diff=legacy?amount:amount-(prev?.amount||0);if(!autoAccountCanPay(a,diff))return autoErr(res,'Autoäri kontol pole pakkumise broneerimiseks piisavalt raha.');a.balance-=diff;if(legacy)u.cash+=prev.amount;if(prev){prev.amount=amount;prev.time=Date.now();prev.source='autoTrade'}else auction.bids.push({userId:u.id,amount,time:Date.now(),source:'autoTrade'});ok(res,u,{message:`Pakkumine ${amount} € esitatud. Raha broneeritud autoäri kontolt oksjoni lõpuni.`})});
 app.post('/api/auto-world/buy',auth,(req,res)=>{autoTick();const u=req.user,a=autoState(u),w=autoWorld();if(!a.city)return autoErr(res,'Osta esmalt garaaž.');if(autoOccupied(u)>=autoSlots(u))return autoErr(res,'Kõik hoiuplatsid on täis. Laienda pinda või müü auto.');let c,cost,registration=0,transport=0;if(req.body.kind==='used'){const idx=w.used.findIndex(x=>x.id===req.body.id);if(idx<0)return autoErr(res,'Auto on juba müüdud.');c=w.used[idx];registration=autoRegistration(c);transport=autoTransport(c.city,a.city);cost=c.market+registration+transport;if(!autoAccountCanPay(a,cost))return autoErr(res,`Ostuks koos registreerimise ja transpordiga vaja ${cost} € autoäri kontol.`);w.used.splice(idx,1);c.registered=true;c.city=a.city}else if(req.body.kind==='new'){const row=autoDealerRows(String(req.body.brand||'')).find(x=>x.model===req.body.model),auction=w.auctions[req.body.brand];if(!row||!auction||auction.holder!==u.id||auction.until<Date.now())return autoErr(res,'Selle margi kehtiv esindusleping puudub.');c=autoNewCar(row,false,a.city);cost=row.newDealerCost;c.market=cost;c.buy=cost;if(!autoAccountCanPay(a,cost))return autoErr(res,`Uus auto maksab ${cost} € autoäri kontolt.`)}else return autoErr(res,'Vigane auto.');a.balance-=cost;gameIncome(cost,'auto_purchase',u);u.cars.push(c);autoHistory(u,`Ostetud ${c.name}: ${cost} € (transport ${transport}, registreerimine ${registration}).`);ok(res,u,{message:`Ostsid ${c.name}. Kokku ${cost} €; transport ${transport} €, registreerimine ${registration} €.`})});
-app.post('/api/auto-world/diagnose',auth,(req,res)=>{const u=req.user,a=autoState(u),c=u.cars.find(x=>x.id===req.body.id&&x.autoV2);if(!c)return autoErr(res,'Auto puudub.');const price=12000;if(a.balance<price)return autoErr(res,'Diagnostikaks on vaja 12 000 € autoäri kontol.');a.balance-=price;gameIncome(price,'auto_diagnostics',u);c.diagnosed=true;ok(res,u,{message:(c.faults||[]).length?`Diagnostika valmis: ${c.faults.map(f=>f.name).join(', ')}.`:'Diagnostika ei tuvastanud vigu.'})});
+app.post('/api/auto-world/diagnose',auth,(req,res)=>{const u=req.user,a=autoState(u),c=u.cars.find(x=>x.id===req.body.id&&x.autoV2);if(!c)return autoErr(res,'Auto puudub.');const price=autoDiagnosticPrice(c);if(a.balance<price)return autoErr(res,`Diagnostikaks on vaja ${price} € autoäri kontol.`);a.balance-=price;gameIncome(price,'auto_diagnostics',u);c.diagnosed=true;ok(res,u,{message:(c.faults||[]).length?`Diagnostika valmis: ${c.faults.map(f=>f.name).join(', ')}.`:'Diagnostika ei tuvastanud vigu.'})});
 app.post('/api/auto-world/repair',auth,(req,res)=>{const u=req.user,a=autoState(u),c=u.cars.find(x=>x.id===req.body.id&&x.autoV2);if(!c||!c.diagnosed)return autoErr(res,'Enne remonti on vajalik diagnostika.');const fault=(c.faults||[]).find(x=>x.name===req.body.fault&&x.repair>0);if(!fault)return autoErr(res,'Rike puudub või juba remonditud.');const repairCost=fault.repair;if(a.balance<repairCost)return autoErr(res,'Remondiks pole autoäri kontol piisavalt raha.');a.balance-=repairCost;gameIncome(repairCost,'auto_repair',u);c.market+=Math.floor(repairCost*.8);c.condition=Math.min(100,c.condition+12);fault.repair=0;ok(res,u,{message:`Remonditud: ${fault.name}, kulu ${repairCost} €.`})});
 app.post('/api/auto-world/tune',auth,(req,res)=>{
  const u=req.user,a=autoState(u),c=u.cars.find(x=>x.id===req.body.id&&x.autoV2);
@@ -1110,8 +1167,8 @@ app.post('/api/auto-world/tune',auth,(req,res)=>{
  autoHistory(u,`Tuunitud ${c.name}: ${selected.map(x=>x.name).join(', ')}. Kulu ${cost} €.`);
  ok(res,u,{message:`Paigaldati ${ids.length} tuuningut: ${selected.map(x=>x.name).join(', ')}. Kulu ${cost} €. Auto arvestuslik väärtus suurenes ${valueIncrease} €.`});
 });
-app.post('/api/auto-world/offer',auth,(req,res)=>{const u=req.user,c=u.cars.find(x=>x.id===req.body.id&&x.autoV2);if(!c)return autoErr(res,'Auto puudub.');const offer=autoNpcOffer(c);saveSoon();res.json({ok:true,offer:{amount:offer.amount,base:offer.base,discount:offer.discount,expiresAt:offer.expiresAt},car:c.name})});
-app.post('/api/auto-world/sell',auth,(req,res)=>{const u=req.user,c=u.cars.find(x=>x.id===req.body.id&&x.autoV2);if(!c)return autoErr(res,'Auto puudub.');const offer=c.npcSaleOffer;if(!offer||offer.expiresAt<=Date.now()||offer.base!==Math.max(1,Math.floor(Number(c.market)||Number(c.buy)||1)))return autoErr(res,'NPC pakkumine aegus või auto väärtus muutus. Küsi uus pakkumine.');c.claimHealthy=!!req.body.claimHealthy;const result=autoSaleToNpc(u,c,offer);if(result.error){saveSoon();return res.status(400).json(result)}ok(res,u,result)});
+app.post('/api/auto-world/offer',auth,(req,res)=>{const u=req.user,c=u.cars.find(x=>x.id===req.body.id&&x.autoV2);if(!c)return autoErr(res,'Auto puudub.');if(c.autoListing?.status==='active')return autoErr(res,'Eemalda esmalt müügikuulutus.');const offer=autoNpcOffer(c);saveSoon();res.json({ok:true,offer:{amount:offer.amount,base:offer.base,discount:offer.discount,expiresAt:offer.expiresAt},car:c.name})});
+app.post('/api/auto-world/sell',auth,(req,res)=>{const u=req.user,c=u.cars.find(x=>x.id===req.body.id&&x.autoV2);if(!c)return autoErr(res,'Auto puudub.');const offer=c.npcSaleOffer;if(!offer||offer.expiresAt<=Date.now()||offer.base!==autoNpcFairValue(c))return autoErr(res,'NPC pakkumine aegus või auto väärtus muutus. Küsi uus pakkumine.');c.claimHealthy=!!req.body.claimHealthy;const result=autoSaleToNpc(u,c,offer);if(result.error){saveSoon();return res.status(400).json(result)}ok(res,u,result)});
 
 app.post('/api/car/license',auth,(req,res)=>{const u=req.user,l=CAR_LICENSES.find(x=>x.level===u.carLicense+1);if(!l)return res.status(400).json({error:'Kõik litsentsid olemas.'});const lc=Math.floor(l.cost*market());if(u.cash<lc)return res.status(400).json({error:`Vaja ${lc} €.`});u.cash-=lc;gameIncome(lc,'car_license',u);u.carLicense++;ok(res,u,{message:`Litsents: ${l.name}`})});
 app.post('/api/car/buy',auth,(req,res)=>{const u=req.user,l=CAR_LICENSES.find(x=>x.level===u.carLicense);if(!l)return res.status(400).json({error:'Vaja autolitsentsi.'});const opt=(CAR_OPTIONS[u.carLicense]||[]).find(x=>x.id===String(req.body.option||''));if(!opt)return res.status(400).json({error:'Vali, millist autot soovid osta.'});const shopFactor=clamp(Number(db.settings.carMarket||1),.95,1.05);const buy=Math.floor(opt.price*shopFactor);const marketValue=Math.floor(buy*(1.10+Math.random()*.15));db.settings.marketPressure+=2;if(u.cash<buy)return res.status(400).json({error:'Raha puudub.'});u.cash-=buy;gameIncome(buy,'car_purchase',u);u.cars.push({id:crypto.randomUUID(),name:opt.name,brand:opt.brand,model:opt.model,engine:opt.engine,power:opt.power,year:opt.year,mileage:opt.mileage,fuel:opt.fuel,drivetrain:opt.drivetrain,quality:opt.quality,buy,market:marketValue});ok(res,u,{message:`Ostsid: ${opt.name} ${buy} € eest. Auto ost ei kuluta käike. Turuväärtus ~${marketValue} €.`})});
@@ -1405,5 +1462,5 @@ function npcCarBuys(){const now=Date.now();for(const [id,l] of Object.entries(db
 
 function updateMarket(){if(Date.now()<db.settings.marketNext)return;const pressure=Math.min(1,Math.abs(db.settings.marketPressure||0)/5000),dir=(Math.random()-.5)*.10+(db.settings.marketPressure>0?.015*pressure:0);db.settings.weaponMarket=clamp(db.settings.weaponMarket*(1+dir),.65,1.65);db.settings.carMarket=clamp(db.settings.carMarket*(1+(Math.random()-.5)*.04),.92,1.08);for(const u of Object.values(db.users)){for(const c of (u.cars||[])){const buy=Math.max(1,Number(c.buy||1)),cur=Math.max(buy,Number(c.market||buy*1.08)),next=Math.floor(cur*(1+(Math.random()-.5)*.08));c.market=clamp(next,Math.floor(buy*1.05),Math.floor(buy*1.40))}}for(const l of Object.values(db.carListings||{})){if(l?.car){const buy=Math.max(1,Number(l.car.buy||1)),cur=Math.max(buy,Number(l.car.market||buy*1.08)),next=Math.floor(cur*(1+(Math.random()-.5)*.08));l.car.market=clamp(next,Math.floor(buy*1.05),Math.floor(buy*1.40))}}db.settings.economyMarket=clamp(db.settings.economyMarket*(1+(Math.random()-.5)*.035),.8,1.25);db.settings.marketPressure=Math.floor((db.settings.marketPressure||0)*.25);db.settings.marketNext=Date.now()+900000;io.emit('settings',db.settings);saveSoon()}
 function decayWanted(){for(const u of Object.values(db.users)){if(u.wanted>0&&Math.random()<.25)u.wanted--;if(u.vipUntil&&u.vipUntil<Date.now()){u.vip=false;u.vipUntil=0}if(u.insurance?.active&&u.insurance.until<Date.now())u.insurance.active=false}}
-setInterval(()=>{expireBounties();cleanupGameBankRequests();const clock=processGameClock();npcCarBuys();autoTick();drawLottery();settleLoans();settleGameBankLoans();for(const u of Object.values(db.users)){refreshNightlife(u);if(Date.now()>=u.maintenanceDue){chargeMaintenance(u);u.maintenanceDue=Date.now()+86400000}}if(clock.changed)saveSoon()},15000);setInterval(npcTick,60000);
+setInterval(()=>{expireBounties();cleanupGameBankRequests();const clock=processGameClock();npcCarBuys();autoTick();autoNpcListingsTick();drawLottery();settleLoans();settleGameBankLoans();for(const u of Object.values(db.users)){refreshNightlife(u);if(Date.now()>=u.maintenanceDue){chargeMaintenance(u);u.maintenanceDue=Date.now()+86400000}}if(clock.changed)saveSoon()},15000);setInterval(npcTick,60000);
 (async()=>{await initStorage();let ownerChanged=false;if(OWNER_PASSWORD&&!db.users[key(OWNER_USERNAME)]){db.users[key(OWNER_USERNAME)]=newUser(OWNER_USERNAME,OWNER_PASSWORD,'owner');ownerChanged=true}const owner=db.users[key(OWNER_USERNAME)];if(owner&&owner.role!=='owner'){owner.role='owner';ownerChanged=true}for(const u of Object.values(db.users)){if(owner&&u.id!==owner.id&&u.role==='owner'){u.role='admin';ownerChanged=true}}if(ownerChanged)await saveNow();server.listen(PORT,()=>console.log(`VARJURIIK v6.80 running on ${PORT}`))})().catch(e=>{console.error(e);process.exit(1)});

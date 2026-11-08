@@ -79,3 +79,20 @@
 - Turul hoitakse umbes 35–55 aktiivset kuulutust. Vanemad kuulutused aeguvad 2–5 tunni jooksul ja osa vanemaid kuulutusi asendatakse uue partiiga.
 - Ostetud auto kaob kohe turult ega teki automaatselt sama sõidukina tagasi. Igal uuel autol on uus ID, mudel, aasta, läbisõit, asukoht, hind ja võimalikud peidetud rikked.
 - Varasemad mängijate autod, garaažid, kontod, laenud ja esinduslepingud säilivad. Vanu kuulutusi ei kustutata uuenduse käivitamisel korraga, vaid lisatakse neile aegumisaeg.
+
+
+## V6.93 — kasutatud auto müügikuulutused ja NPC ostud
+- Mängija saab valida auto müügihinna ise; NPC kontrollib kuulutust 2–4 minuti järel.
+- Sobiva küsitud hinna puhul ostab NPC auto küsitud hinnaga; muidu teeb vastupakkumise, mida saab vastu võtta või kuulutuse eemaldada.
+- Müügiraha laekub autoäri kontole. Varjatud rikete teadlik veatuks kuulutamine säilitab trahviriski.
+- Kohe küsitav NPC pakkumine põhineb ideaalsel turuhinnal, mitte auto ostuhinnal.
+- Diagnostika hind sõltub nüüd auto turuväärtusest ja vanusest, mitte enam fikseeritud 12 000 eurost.
+- Vanad mängijate andmed säilivad.
+
+
+## v6.94 — Autoäri pettuseteated
+- Kui NPC tuvastab teadliku varjatud rikke varjamise, saab mängija kohe Socket.IO teavituse.
+- Autokeskuse ülaossa ilmub punane hoiatus auto nime, trahvi, koheselt tasutud summa ja jääkvõlaga.
+- Teadet saab märkida loetuks; see ei tühista trahvi ega võlga.
+- Teated salvestuvad mängija autoäri andmetesse ja püsivad lehe värskendamisel.
+- Varasemad mängijad ja progress säilivad.

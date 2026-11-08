@@ -412,3 +412,17 @@ V6.33.1 parandus
 - Avalehe kõrvalkulud näitavad detailset jaotust, kogusummat, tähtaega ja võimalikku aresti.
 - Kõrvalkulud saab ise tasuda; tähtajal võetakse esmalt pangast, siis sularahast. Puudujäägist tekib võlg ja pangalaekumiste arest kuni tasumiseni.
 - Töödeldud Keskpanga laenutaotluse kirje saab ise kustutada; vanad töödeldud kirjed eemaldatakse 7 päeva järel.
+
+## V6.81 — Automajandus (2026-11-08)
+- Autokeskus: 40 tuntud automarki, kaasa arvatud Škoda, Opel, Citroën, Peugeot, Toyota, Volkswagen, Audi, BMW, Mercedes-Benz jne.
+- Ühised automargi esinduslepingu oksjonid: 8 tundi, kõrgeim pakkumine, võitja leping 3 päeva. Kaotajate broneeritud raha tagastatakse.
+- Kasutatud autosid pakuvad NPC-d Eesti linnades; botid täiendavad ja vähendavad turgu automaatselt.
+- Ostetud kasutatud auto: transpordikulu ja mängusisene registreerimistasu; vead on osaliselt peidetud.
+- Garaaž 300 000 €, valitav Eesti linn; alguses õueplats 3 autole + garaaž 1 autole. Laiendused tasulised.
+- Autoäri konto: sissemakse sularahast; väljavõtmisel 24% Keskpanka.
+- Auto diagnostika, remont, tuuning, NPC-le müümine ning rikkega auto teadliku varjamise eest trahvirisk.
+- Kõrvalkulud: sama perioodi käsitsi makset ei saa pärast tasumist uuesti võtta.
+- Olemasolevad kontod, senised autod ning mängijate muud andmed säilivad; uus süsteem lisab väljad vajaduse korral.
+- Pildid on praegu kasutajaliidese graafilised automargi näidised, mitte fotod. Fotode jaoks tuleks lisada õigustega pildifailid.
+
+**Paigaldus:** Paki lahti nii, et `server.js`, `package.json`, `README.md` ja kaust `public/index.html` jäävad näidatud struktuuri. `npm install` ja `npm start` (Node.js >=20). Enne serveri väljavahetamist varunda olemasolev andmebaas ning ära kustuta serveri `data` kausta ega PostgreSQL andmebaasi.

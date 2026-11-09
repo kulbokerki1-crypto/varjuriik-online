@@ -152,3 +152,11 @@
 - **Piirang:** serveri integratsiooni- ja Renderi lõppkasutajatesti ei saanud siin käivitada, sest projektis vajalikud Express/Socket.IO/PostgreSQL sõltuvused ei olnud selles keskkonnas paigaldatud. Ükski test ei muutnud päris mängu andmebaasi.
 
 Paigaldamine: tõsta ZIP-i failid projekti juurkausta (`server.js`, `package.json`, `README.md` ja `public/index.html`). Ära kirjuta üle tootmiskeskkonna andmebaasi ega `data` kausta. Pärast uut Deploy'd värskenda lehte.
+
+
+## v7.01 — Autoäri edetabel ja üldskoor
+- Autoäri dünaamiline skoor arvestatakse 100% mängija üldskoorile; mitte 25%.
+- Avalik kokkupandav edetabel kasutajanimedega, müügiarvu, kasumi, konto ja autopargi väärtusega.
+- Skoori kaalud: kasum 35%, müükide arv 25%, garaaž/õueplats 15%, autopark 10%, kehtivad esindused 10%, maine 5%; trahvid vähendavad skoori.
+- Müügiarvestus algab versioonist v7.01, eelnevalt salvestamata tehinguid ei fabritseerita.
+- Uued statistikaväljad lisatakse olemasolevale mängijale ilma olemasoleva progressi nullimiseta.

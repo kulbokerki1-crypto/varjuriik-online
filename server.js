@@ -795,7 +795,32 @@ function refresh(u){const now=Date.now();processGameClock(now);refreshNightlife(
 function nextTurns(u){refresh(u);return nextGlobalTickMs()}
 function needTurns(u,n){refresh(u);if(u.turns<n)return false;u.turns-=n;return true}
 function progressionScore(l,max,share,minLevel=1){const level=Math.max(minLevel,Math.min(max,Number(l)||minLevel));if(level<=minLevel)return 0;const progress=(level-minLevel)/(max-minLevel);return share*Math.pow(progress,4.2)}
-function score(u){const progression=progressionScore(u.mafiaLevel,300,160e9,1)+progressionScore(u.securityLevel,300,160e9,1)+progressionScore(u.propertyLevel,100,118e9,0),troops=(Number(u.mafia||0)+Number(u.guards||0))*110,weps=Object.entries(u.weapons||{}).reduce((s,[i,q])=>s+(WEAPONS[i]?.score||0)*q,0),biz=Object.values(u.businesses||{}).reduce((s,l)=>s+l*l*100000,0),nightlife=(u.nightlife&&Array.isArray(u.nightlife.venues)?u.nightlife.venues:[]).reduce((s,v)=>s+nightClubScore(v),0);return Math.max(0,Math.floor(progression+troops+weps+biz+nightlife))}
+// v7.01: autoäri skoor on dünaamiline ja lisatakse üldskoorile 100%, ilma salvestatud boonuse korduva liitmiseta.
+// Varem salvestamata müügiajalugu ei oletata; arvestus hakkab uute kinnitatud müükidega.
+function autoTradeMetrics(u){
+ const a=u.autoTrade&&typeof u.autoTrade==='object'?u.autoTrade:{};
+ const m=a.performance&&typeof a.performance==='object'?a.performance:{};
+ const sold=Math.max(0,Number(m.sold)||0),revenue=Math.max(0,Number(m.revenue)||0),profit=Number(m.profit)||0;
+ const cars=(u.cars||[]).filter(c=>c.autoV2);
+ const stockValue=cars.reduce((sum,c)=>sum+Math.max(0,Number(autoIdealPrice(c))||0),0);
+ const yard=Math.max(0,Number(a.yard)||0),garage=Math.max(0,Number(a.garage)||0);
+ const contracts=db.autoWorld?.auctions?Object.values(db.autoWorld.auctions).filter(x=>x.holder===u.id&&Number(x.until)>Date.now()).length:0;
+ const fines=Math.max(0,Number(a.fines)||0),frauds=Math.max(0,Number(m.frauds)||0);
+ // Komponendid: kasum 35%, müügid 25%, pind 15%, autopark 10%, esindused 10%, maine 5%.
+ const parts={profit:Math.floor(Math.max(0,profit)*.35),sales:Math.floor(sold*100000*.25),premises:Math.floor((yard+garage)*100000*.15),stock:Math.floor(stockValue*.10),contracts:Math.floor(contracts*2000000*.10),reputation:Math.floor(Math.max(0,100-frauds*20)*10000*.05)};
+ const penalty=Math.floor(Math.min(1e12,fines)*.10);
+ const score=Math.max(0,Math.floor(Object.values(parts).reduce((v,n)=>v+n,0)-penalty));
+ const tier=Math.min(10,Math.max(1,1+Math.floor(Math.log10(1+score/250000)*2)));
+ return {score,tier,sold,revenue,profit,stockValue,balance:Math.max(0,Number(a.balance)||0),yard,garage,contracts,frauds:frauds,fines,parts,penalty};
+}
+function autoRecordSale(u,c,amount){
+ const a=autoState(u);if(!a.performance||typeof a.performance!=='object')a.performance={};
+ const m=a.performance,price=Math.max(0,Math.floor(Number(amount)||0)),cost=autoCostSummary(c).total;
+ m.sold=(Number(m.sold)||0)+1;m.revenue=(Number(m.revenue)||0)+price;
+ m.profit=(Number(m.profit)||0)+price-cost;
+ m.lastSaleAt=Date.now();
+}
+function score(u){const progression=progressionScore(u.mafiaLevel,300,160e9,1)+progressionScore(u.securityLevel,300,160e9,1)+progressionScore(u.propertyLevel,100,118e9,0),troops=(Number(u.mafia||0)+Number(u.guards||0))*110,weps=Object.entries(u.weapons||{}).reduce((s,[i,q])=>s+(WEAPONS[i]?.score||0)*q,0),biz=Object.values(u.businesses||{}).reduce((s,l)=>s+l*l*100000,0),nightlife=(u.nightlife&&Array.isArray(u.nightlife.venues)?u.nightlife.venues:[]).reduce((s,v)=>s+nightClubScore(v),0);return Math.max(0,Math.floor(progression+troops+weps+biz+nightlife+autoTradeMetrics(u).score))}
 function market(x=1){return Math.max(.45,Math.min(2.5,Number(db.settings.economyMarket||1)*Number(x||1)))}
 function weaponPrice(i){if(!WEAPONS[i])return 0;if(i===0)return 0;const base=WEAPONS[i].price||0;const raw=Number(db.settings.weaponPriceOverrides?.[i]);return Math.max(1000,Math.min(250000,Math.floor(Number.isFinite(raw)?raw:base)))}
 function baseCombat(u){const cap=(u.mafia+u.guards)*2,w=Object.entries(u.weapons||{}).reduce((s,[i,q])=>s+(WEAPONS[i]?.atk||0)*Math.min(q,cap),0),d=Object.entries(u.weapons||{}).reduce((s,[i,q])=>s+(WEAPONS[i]?.def||0)*Math.min(q,cap),0);return{atk:u.mafia*(20+u.mafiaLevel*1.8)+w,def:u.guards*(22+u.securityLevel*2)+d}}
@@ -1185,6 +1210,7 @@ function autoSaleToNpc(u,c,offer){
  if(detected){
   const fine=Math.floor(price*(.25+Math.random()*1.25));
   a.fines+=fine;
+  if(!a.performance)a.performance={};a.performance.frauds=(Number(a.performance.frauds)||0)+1;
   const paid=Math.min(a.balance,fine);a.balance-=paid;gameIncome(paid,'auto_fraud_fine',u);
   delete c.npcSaleOffer;
   const unpaid=fine-paid;
@@ -1196,6 +1222,7 @@ function autoSaleToNpc(u,c,offer){
   return {error:'Ostja avastas varjatud vea! Auto tagastati, ostuhind jäi müüjale maksmata ja määrati trahv.',fine,returned:true};
  }
  autoAccountCredit(u,price);
+ autoRecordSale(u,c,price);
  u.cars=u.cars.filter(x=>x.id!==c.id);
  autoHistory(u,`NPC ostis ${c.name}: ${price} € autoäri kontole (kauples ${offer.discount}%).`);
  return {message:`NPC ostis auto ${price} € eest (${offer.discount}% alla arvestusliku turuväärtuse). Raha laekus autoäri kontole.`};
@@ -1245,7 +1272,12 @@ app.post('/api/auto-world/accept-counter',auth,(req,res)=>{
  ok(res,u,{message:`Võtsid NPC pakkumise vastu: ${amount} €. Raha autoäri kontol.`});
 });
 app.post('/api/auto-world/fraud-ack',auth,(req,res)=>{const a=autoState(req.user),id=String(req.body.id||'');if(!Array.isArray(a.fraudAlerts))a.fraudAlerts=[];const alert=a.fraudAlerts.find(x=>x.id===id);if(!alert)return autoErr(res,'Teadet ei leitud.');alert.acknowledged=true;ok(res,req.user,{message:'Pettuseteade märgitud loetuks. Trahv ja võlg jäävad alles.'})});
-app.get('/api/auto-world',auth,(req,res)=>{autoTick();const u=req.user,a=autoState(u),w=autoWorld();res.json({account:a,depositLimits:autoDepositStatus(a),capacity:autoSlots(u),occupied:autoOccupied(u),expansionPrices:{yard:autoExpansionPrice(a,'yard'),garage:autoExpansionPrice(a,'garage')},cities:AUTO_CITIES,used:w.used.map(c=>({...c,faults:undefined,condition:undefined,description:c.description,idealPrice:autoIdealPrice(c),registration:autoRegistration(c),transport:autoTransport(c.city,a.city)})),auctions:Object.values(w.auctions).map(x=>({brand:x.brand,end:x.end,starting:x.starting,top:x.bids.reduce((m,b)=>Math.max(m,b.amount),0),myBid:x.bids.find(b=>b.userId===u.id)?.amount||0,holder:byId(x.holder)?.name||'',mine:x.holder===u.id&&x.until>Date.now(),until:x.until,status:x.holder&&x.until>Date.now()?'contract':'auction',bids:[...x.bids].sort((a,b)=>b.amount-a.amount).map(b=>({name:byId(b.userId)?.name||'Endine mängija',amount:b.amount,time:b.time||0})),lastResult:x.lastResult||null})),owned:autoOwned(u).map(c=>({...c,costSummary:autoCostSummary(c),idealPrice:autoIdealPrice(c),diagnosticPrice:autoDiagnosticPrice(c),tuneOptions:autoTuneOptions(c),faults:c.diagnosed?c.faults:undefined})),brands:AUTO_BRANDS.flatMap(r=>autoDealerRows(r.brand)),militaryTenders:(w.militaryTenders||[]).map(t=>({id:t.id,car:{id:t.car.id,name:t.car.name,year:t.car.year,km:t.car.km,city:t.car.city,description:t.car.description,idealPrice:autoIdealPrice(t.car)},starting:t.starting,end:t.end,top:t.bids.reduce((m,b)=>Math.max(m,b.amount),0),bids:[...t.bids].sort((a,b)=>b.amount-a.amount).map(b=>({name:byId(b.userId)?.name||'Endine mängija',amount:b.amount,time:b.time})),myBid:t.bids.find(b=>b.userId===u.id)?.amount||0})),militaryTenderHistory:(w.militaryTenderHistory||[]).slice(0,8),now:Date.now()})});
+app.get('/api/auto-world/leaderboard',auth,(req,res)=>{
+ const rows=Object.values(db.users||{}).filter(u=>!u.banned&&!u.npc).map(u=>({name:u.name, ...autoTradeMetrics(u)}));
+ rows.sort((a,b)=>b.score-a.score||b.sold-a.sold||a.name.localeCompare(b.name));
+ res.json({rows:rows.slice(0,100),asOf:Date.now(),note:'Müügi- ja kasumiarvestus algab v7.01-st; varasemaid teadmata tehinguid ei oletata.'});
+});
+app.get('/api/auto-world',auth,(req,res)=>{autoTick();const u=req.user,a=autoState(u),w=autoWorld();res.json({account:a,metrics:autoTradeMetrics(u),depositLimits:autoDepositStatus(a),capacity:autoSlots(u),occupied:autoOccupied(u),expansionPrices:{yard:autoExpansionPrice(a,'yard'),garage:autoExpansionPrice(a,'garage')},cities:AUTO_CITIES,used:w.used.map(c=>({...c,faults:undefined,condition:undefined,description:c.description,idealPrice:autoIdealPrice(c),registration:autoRegistration(c),transport:autoTransport(c.city,a.city)})),auctions:Object.values(w.auctions).map(x=>({brand:x.brand,end:x.end,starting:x.starting,top:x.bids.reduce((m,b)=>Math.max(m,b.amount),0),myBid:x.bids.find(b=>b.userId===u.id)?.amount||0,holder:byId(x.holder)?.name||'',mine:x.holder===u.id&&x.until>Date.now(),until:x.until,status:x.holder&&x.until>Date.now()?'contract':'auction',bids:[...x.bids].sort((a,b)=>b.amount-a.amount).map(b=>({name:byId(b.userId)?.name||'Endine mängija',amount:b.amount,time:b.time||0})),lastResult:x.lastResult||null})),owned:autoOwned(u).map(c=>({...c,costSummary:autoCostSummary(c),idealPrice:autoIdealPrice(c),diagnosticPrice:autoDiagnosticPrice(c),tuneOptions:autoTuneOptions(c),faults:c.diagnosed?c.faults:undefined})),brands:AUTO_BRANDS.flatMap(r=>autoDealerRows(r.brand)),militaryTenders:(w.militaryTenders||[]).map(t=>({id:t.id,car:{id:t.car.id,name:t.car.name,year:t.car.year,km:t.car.km,city:t.car.city,description:t.car.description,idealPrice:autoIdealPrice(t.car)},starting:t.starting,end:t.end,top:t.bids.reduce((m,b)=>Math.max(m,b.amount),0),bids:[...t.bids].sort((a,b)=>b.amount-a.amount).map(b=>({name:byId(b.userId)?.name||'Endine mängija',amount:b.amount,time:b.time})),myBid:t.bids.find(b=>b.userId===u.id)?.amount||0})),militaryTenderHistory:(w.militaryTenderHistory||[]).slice(0,8),now:Date.now()})});
 app.post('/api/auto-world/garage',auth,(req,res)=>{const u=req.user,a=autoState(u),city=String(req.body.city||'');if(a.city)return autoErr(res,'Garaaž on juba olemas.');if(!AUTO_CITIES.includes(city))return autoErr(res,'Vali Eesti linn.');const cost=300000;if(!autoAccountCanPay(a,cost))return autoErr(res,`Garaaži ostuks vaja ${cost} € autoäri kontol.`);a.balance-=cost;gameIncome(cost,'auto_garage_purchase',u);a.city=city;autoHistory(u,`Ostsid garaaži: ${city}.`);ok(res,u,{message:`Garaaž asub nüüd linnas ${city}. Õueplats 3 autot ja garaaž 1 auto.`})});
 app.post('/api/auto-world/expand',auth,(req,res)=>{const u=req.user,a=autoState(u),type=String(req.body.type||'');if(!a.city)return autoErr(res,'Osta esmalt garaaž.');if(!['yard','garage'].includes(type))return autoErr(res,'Vigane laiendus.');const current=a[type],cost=autoExpansionPrice(a,type);if(!autoAccountCanPay(a,cost))return autoErr(res,`Laiendus maksab ${cost} € autoäri kontolt.`);a.balance-=cost;gameIncome(cost,'auto_garage_expansion',u);a[type]++;ok(res,u,{message:`Laiendus valmis! ${type==='yard'?'Õueplatsi':'Garaaži'} kohti: ${a[type]}. Maksis ${cost} €.`})});
 app.post('/api/auto-world/bank',auth,(req,res)=>{

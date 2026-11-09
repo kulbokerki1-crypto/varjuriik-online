@@ -1,3 +1,10 @@
+# VARJURIIK v6.99 — autokeskuse brauserivea parandus
+
+- Parandatud uute autode ostunuppude vigane HTML-sündmusekäsu koostamine. Automargi ja mudeli väärtused edastatakse turvaliselt kodeeritult, nii et brauseri JavaScripti ei teki süntaksiviga.
+- Sõjaväetehnika hanked, luksusautod ja v6.98 muudatused jäid alles.
+- Mängijate andmeid ega saldosid ei nullita.
+- Kontrollitud serveri- ja kliendiskriptide süntaksit ning ostunuppude käsu koostamist brauseris.
+
 # VARJURIIK v6.91
 
 - Margipõhise esindusoksjoni võitja saab osta kõiki sama margi uusi mudeleid.
@@ -122,3 +129,12 @@
 - Iga edukas sissemakse maksab 200 käiku. Ebaõnnestunud katse ei võta raha ega käike.
 - Sissemakse ei ole müügitulu ega Keskpanga tulu; väljavõtmise senine 24% tasu jääb alles.
 - Sissemaksete ajalugu salvestatakse mängija autoäri andmetesse ning vanad kontojäägid säilivad.
+
+
+## v6.98 – kallid autod ja demilitariseeritud sõjaväetehnika
+- Lisatud Rolls-Royce, Pagani, Koenigsegg, Rimac ja Maybach koos mitme uue mudeliga.
+- Kasutatud autode turul eraldi sõjaväetehnika jaotis: maasturid, rasked veokid, transpordisõidukid ja ajaloolised soomukid. Kõik on demilitariseeritud ja ilma töötavate relvadeta.
+- Eraldi avalikud 8-tunnised sõjaväetehnika hanked; 3 masinat voorus, võitja saab konkreetse masina oma autoparki.
+- Pakkumised ja hanke võitjad kõigile nähtavad; mängija raha broneeritakse autoäri kontolt, kaotanutele tagastatakse.
+- Ostetud sõjaväetehnikale rakenduvad autoäri hoiukoha, diagnostika, remondi ja NPC müügi süsteemid.
+- Olemasolevat mängijate progressi ega varasemaid sõidukeid ei nullita.

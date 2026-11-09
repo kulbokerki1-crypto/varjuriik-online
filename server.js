@@ -892,10 +892,10 @@ app.post('/api/business/collect',auth,(req,res)=>{const u=req.user;let gross=0,t
 
 // VARJURIIK v6.81: eraldi automajandus. Vana autoandmestik ja vanad marsruudid jäävad alles.
 const AUTO_BRANDS=[
- ['Škoda','Octavia',220000],['Opel','Astra',170000],['Citroën','C4',165000],['Peugeot','308',190000],['Renault','Megane',185000],['Ford','Focus',210000],['Volkswagen','Golf',255000],['Toyota','Corolla',265000],['Honda','Civic',270000],['Hyundai','i30',215000],['Kia','Ceed',215000],['SEAT','Leon',215000],['Dacia','Duster',175000],['Nissan','Qashqai',270000],['Mazda','3',260000],['Fiat','Tipo',145000],['Suzuki','Vitara',230000],['Mitsubishi','Outlander',280000],['Subaru','Outback',350000],['Volvo','V60',480000],['Lexus','IS',510000],['Audi','A6',680000],['BMW','530d',750000],['Mercedes-Benz','E 220',790000],['MINI','Cooper',350000],['Jeep','Compass',400000],['Land Rover','Discovery',1100000],['Jaguar','XF',850000],['Porsche','911',2100000],['Tesla','Model 3',690000],['Polestar','2',660000],['Cupra','Formentor',455000],['Alfa Romeo','Giulia',670000],['Maserati','Ghibli',1350000],['Bentley','Continental GT',4200000],['Ferrari','Roma',5200000],['Lamborghini','Huracán',5900000],['McLaren','720S',6500000],['Aston Martin','Vantage',3700000],['Bugatti','Chiron',90000000]
+ ['Škoda','Octavia',220000],['Opel','Astra',170000],['Citroën','C4',165000],['Peugeot','308',190000],['Renault','Megane',185000],['Ford','Focus',210000],['Volkswagen','Golf',255000],['Toyota','Corolla',265000],['Honda','Civic',270000],['Hyundai','i30',215000],['Kia','Ceed',215000],['SEAT','Leon',215000],['Dacia','Duster',175000],['Nissan','Qashqai',270000],['Mazda','3',260000],['Fiat','Tipo',145000],['Suzuki','Vitara',230000],['Mitsubishi','Outlander',280000],['Subaru','Outback',350000],['Volvo','V60',480000],['Lexus','IS',510000],['Audi','A6',680000],['BMW','530d',750000],['Mercedes-Benz','E 220',790000],['MINI','Cooper',350000],['Jeep','Compass',400000],['Land Rover','Discovery',1100000],['Jaguar','XF',850000],['Porsche','911',2100000],['Tesla','Model 3',690000],['Polestar','2',660000],['Cupra','Formentor',455000],['Alfa Romeo','Giulia',670000],['Maserati','Ghibli',1350000],['Bentley','Continental GT',4200000],['Ferrari','Roma',5200000],['Lamborghini','Huracán',5900000],['McLaren','720S',6500000],['Aston Martin','Vantage',3700000],['Bugatti','Chiron',90000000],['Rolls-Royce','Phantom',180000000],['Pagani','Huayra',450000000],['Koenigsegg','Jesko',650000000],['Rimac','Nevera',320000000],['Maybach','S 680',100000000]
 ].map(([brand,model,base])=>({brand,model,base}));
 // v6.91: markide esindusõigus avab kogu vastava margi mudelivaliku.
-const AUTO_DEALER_MODELS=Object.freeze({"Škoda": ["Fabia", "Scala", "Octavia", "Superb", "Kodiaq"], "Opel": ["Corsa", "Astra", "Insignia", "Grandland"], "Citroën": ["C3", "C4", "C5 Aircross"], "Peugeot": ["208", "308", "3008", "508"], "Renault": ["Clio", "Megane", "Captur", "Austral"], "Ford": ["Fiesta", "Focus", "Kuga", "Mustang"], "Volkswagen": ["Polo", "Golf", "Passat", "Tiguan", "Touareg"], "Toyota": ["Yaris", "Corolla", "Camry", "RAV4", "Land Cruiser"], "Honda": ["Jazz", "Civic", "HR-V", "CR-V"], "Hyundai": ["i20", "i30", "Tucson", "Santa Fe"], "Kia": ["Picanto", "Ceed", "Sportage", "Sorento"], "SEAT": ["Ibiza", "Leon", "Arona", "Ateca"], "Dacia": ["Sandero", "Duster", "Jogger"], "Nissan": ["Micra", "Qashqai", "X-Trail"], "Mazda": ["2", "3", "CX-5", "CX-60"], "Fiat": ["500", "Tipo", "Panda"], "Suzuki": ["Swift", "Vitara", "S-Cross"], "Mitsubishi": ["ASX", "Outlander", "Eclipse Cross"], "Subaru": ["Impreza", "Outback", "Forester"], "Volvo": ["V40", "V60", "XC60", "XC90"], "Lexus": ["IS", "ES", "NX", "RX"], "Audi": ["A3", "A4", "A6", "A8", "Q5", "Q7", "RS6"], "BMW": ["118i", "320d", "530d", "740d", "X3", "X5", "M3", "M5"], "Mercedes-Benz": ["A 180", "C 220", "E 220", "S 350", "GLC", "GLE", "AMG GT"], "MINI": ["Cooper", "Countryman"], "Jeep": ["Renegade", "Compass", "Wrangler"], "Land Rover": ["Discovery", "Defender", "Range Rover"], "Jaguar": ["XE", "XF", "F-Pace"], "Porsche": ["Macan", "Cayenne", "Panamera", "911"], "Tesla": ["Model 3", "Model Y", "Model S", "Model X"], "Polestar": ["2", "3", "4"], "Cupra": ["Leon", "Formentor", "Born"], "Alfa Romeo": ["Giulietta", "Giulia", "Stelvio"], "Maserati": ["Ghibli", "Grecale", "Levante"], "Bentley": ["Continental GT", "Flying Spur", "Bentayga"], "Ferrari": ["Roma", "296 GTB", "SF90"], "Lamborghini": ["Huracán", "Urus", "Revuelto"], "McLaren": ["Artura", "720S", "750S"], "Aston Martin": ["Vantage", "DB12", "DBX"], "Bugatti": ["Chiron", "Tourbillon"]});
+const AUTO_DEALER_MODELS=Object.freeze({"Škoda": ["Fabia", "Scala", "Octavia", "Superb", "Kodiaq"], "Opel": ["Corsa", "Astra", "Insignia", "Grandland"], "Citroën": ["C3", "C4", "C5 Aircross"], "Peugeot": ["208", "308", "3008", "508"], "Renault": ["Clio", "Megane", "Captur", "Austral"], "Ford": ["Fiesta", "Focus", "Kuga", "Mustang"], "Volkswagen": ["Polo", "Golf", "Passat", "Tiguan", "Touareg"], "Toyota": ["Yaris", "Corolla", "Camry", "RAV4", "Land Cruiser"], "Honda": ["Jazz", "Civic", "HR-V", "CR-V"], "Hyundai": ["i20", "i30", "Tucson", "Santa Fe"], "Kia": ["Picanto", "Ceed", "Sportage", "Sorento"], "SEAT": ["Ibiza", "Leon", "Arona", "Ateca"], "Dacia": ["Sandero", "Duster", "Jogger"], "Nissan": ["Micra", "Qashqai", "X-Trail"], "Mazda": ["2", "3", "CX-5", "CX-60"], "Fiat": ["500", "Tipo", "Panda"], "Suzuki": ["Swift", "Vitara", "S-Cross"], "Mitsubishi": ["ASX", "Outlander", "Eclipse Cross"], "Subaru": ["Impreza", "Outback", "Forester"], "Volvo": ["V40", "V60", "XC60", "XC90"], "Lexus": ["IS", "ES", "NX", "RX"], "Audi": ["A3", "A4", "A6", "A8", "Q5", "Q7", "RS6"], "BMW": ["118i", "320d", "530d", "740d", "X3", "X5", "M3", "M5"], "Mercedes-Benz": ["A 180", "C 220", "E 220", "S 350", "GLC", "GLE", "AMG GT"], "MINI": ["Cooper", "Countryman"], "Jeep": ["Renegade", "Compass", "Wrangler"], "Land Rover": ["Discovery", "Defender", "Range Rover"], "Jaguar": ["XE", "XF", "F-Pace"], "Porsche": ["Macan", "Cayenne", "Panamera", "911"], "Tesla": ["Model 3", "Model Y", "Model S", "Model X"], "Polestar": ["2", "3", "4"], "Cupra": ["Leon", "Formentor", "Born"], "Alfa Romeo": ["Giulietta", "Giulia", "Stelvio"], "Maserati": ["Ghibli", "Grecale", "Levante"], "Bentley": ["Continental GT", "Flying Spur", "Bentayga"], "Ferrari": ["Roma", "296 GTB", "SF90"], "Lamborghini": ["Huracán", "Urus", "Revuelto"], "McLaren": ["Artura", "720S", "750S"], "Aston Martin": ["Vantage", "DB12", "DBX"], "Bugatti": ["Chiron", "Tourbillon"], "Rolls-Royce": ["Ghost", "Cullinan", "Phantom", "Spectre"], "Pagani": ["Huayra", "Utopia", "Zonda"], "Koenigsegg": ["Jesko", "Gemera", "Regera"], "Rimac": ["Nevera", "Nevera R"], "Maybach": ["S 580", "S 680", "GLS 600"]});
 function autoDealerRows(brand){
  const seed=AUTO_BRANDS.find(x=>x.brand===brand);if(!seed)return [];
  const names=AUTO_DEALER_MODELS[brand]||[seed.model];
@@ -904,6 +904,78 @@ function autoDealerRows(brand){
   const base=Math.max(25000,Math.round(seed.base*variation/1000)*1000);
   return {brand,model,base,newDealerCost:Math.floor(base*2),newRecommendedPrice:Math.round(base*2.55/1000)*1000};
  });
+}
+// V6.98: fiktiivne tsiviilkasutuseks demilitariseeritud sõjaväesõidukite turg.
+// Sõidukitel puuduvad töötavad relvasüsteemid; kõik hinnad on mängurahas.
+const AUTO_MILITARY=[
+ {brand:'Militaar',model:'Maastur 4×4',base:3600000},
+ {brand:'Militaar',model:'Sideauto 4×4',base:5200000},
+ {brand:'Militaar',model:'Raske maastikuveok',base:11000000},
+ {brand:'Militaar',model:'6×6 logistikaveok',base:22000000},
+ {brand:'Militaar',model:'Soomustatud transpordisõiduk',base:65000000},
+ {brand:'Militaar',model:'8×8 soomustransportöör',base:125000000},
+ {brand:'Militaar',model:'Roomikutega päästesõiduk',base:175000000},
+ {brand:'Militaar',model:'Raske evakuatsioonimasin',base:310000000},
+ {brand:'Militaar',model:'Eksklusiivne ajalooline soomuk',base:800000000}
+];
+function militaryUsedCar(){
+ const row=AUTO_MILITARY[rand(0,AUTO_MILITARY.length-1)];
+ const c=autoNewCar(row,true);
+ c.vehicleClass='military';c.vehicleBase=row.base;
+ c.description=['Demilitariseeritud, varustuse ajalugu osaline.','Kollektsionäärisõiduk, vajab tehnilist kontrolli.','Maastikusõiduk; kulunud veermik võib vajada remonti.'][rand(0,2)];
+ c.year=rand(1985,2020);c.km=rand(12000,185000);c.mileage=c.km+' km';
+ // Hoia müügihind mõistlikult allpool ideaalse seisukorra hinnangut.
+ c.market=Math.max(300000,Math.floor(autoIdealPrice(c)*(.50+Math.random()*.28)));
+ c.buy=c.market;
+ return c;
+}
+function militaryTenderCar(){
+ const row=AUTO_MILITARY[rand(3,AUTO_MILITARY.length-1)];
+ const c=autoNewCar(row,true);c.vehicleClass='military';c.vehicleBase=row.base;
+ c.year=rand(1990,2022);c.km=rand(1000,100000);c.mileage=c.km+' km';
+ c.description='Demilitariseeritud erisõiduk. Riikliku oksjoni mänguline hange; töötavaid relvasüsteeme pole.';
+ c.market=Math.max(1000000,Math.floor(autoIdealPrice(c)*.64));c.buy=c.market;
+ return c;
+}
+function militaryTenderTick(w,now){
+ if(!Array.isArray(w.militaryTenders))w.militaryTenders=[];
+ if(!Array.isArray(w.militaryTenderHistory))w.militaryTenderHistory=[];
+ let changed=false;
+ for(const tender of w.militaryTenders){
+  if(tender.status!=='open'||now<tender.end)continue;
+  const ranked=[...tender.bids].sort((a,b)=>b.amount-a.amount||(a.time||0)-(b.time||0));
+  let winner=null;
+  for(const bid of ranked){
+   const u=byId(bid.userId);
+   if(u&&autoState(u).city&&autoOccupied(u)<autoSlots(u)&&!winner){winner=bid;continue;}
+  }
+  // Kogu raha oli pakkumisel broneeritud. Kaotanutele ja täis garaažiga pakkujatele tagastus.
+  for(const bid of tender.bids){
+   const u=byId(bid.userId);
+   if(u&&(!winner||bid.userId!==winner.userId))autoAccountCredit(u,bid.amount);
+  }
+  if(winner){
+   const u=byId(winner.userId),c={...tender.car,id:crypto.randomUUID(),city:autoState(u).city,registered:true};
+   c.buy=winner.amount;c.market=winner.amount;
+   c.autoCosts={purchase:winner.amount,transport:0,registration:0,diagnostics:0,repairs:0,tuning:0,complete:true};
+   u.cars.push(c);gameIncome(winner.amount,'auto_military_tender',u);
+   autoHistory(u,`Võitsid sõjaväetehnika hanke: ${c.name}, ${winner.amount} €.`);
+   notify(u,'car',`🏆 Võitsid sõjaväetehnika hanke: ${c.name}! Masin lisati sinu autoparki.`);
+  }
+  tender.status='closed';tender.winner=winner?(byId(winner.userId)?.name||'Mängija'):null;
+  tender.winAmount=winner?.amount||0;tender.closedAt=now;
+  w.militaryTenderHistory.unshift({id:tender.id,name:tender.car.name,winner:tender.winner,amount:tender.winAmount,at:now});
+  w.militaryTenderHistory=w.militaryTenderHistory.slice(0,15);changed=true;
+ }
+ w.militaryTenders=w.militaryTenders.filter(t=>t.status==='open');
+ if(w.militaryTenders.length===0&&(!w.militaryTenderNext||now>=w.militaryTenderNext)){
+  for(let i=0;i<3;i++){
+   const car=militaryTenderCar();
+   w.militaryTenders.push({id:crypto.randomUUID(),car,starting:Math.max(1000000,Math.floor(car.market*.72)),end:now+8*3600000,bids:[],status:'open'});
+  }
+  w.militaryTenderNext=now+12*3600000;changed=true;
+ }
+ if(changed)saveSoon();
 }
 const AUTO_CITIES=['Paide','Tallinn','Tartu','Pärnu','Rakvere','Viljandi','Võru','Haapsalu','Narva','Kuressaare','Jõgeva','Valga','Rapla','Kärdla','Jõhvi','Põlva','Türi','Elva','Keila','Sillamäe','Kunda','Mustvee','Tõrva','Antsla','Vändra'];
 const AUTO_FAULTS=[['Pidurid',.07],['Veermik',.11],['Elektrisüsteem',.13],['Käigukast',.24],['Mootor',.34],['Turbo',.21],['Kliimaseade',.06],['Kere ja värv',.12]];
@@ -986,7 +1058,7 @@ function autoRegistration(c){return Math.max(3500,Math.floor((c.market||c.buy||0
 // Hinnang ei kasuta peidetud rikkeid, et neid ostjale mitte paljastada.
 function autoIdealPrice(c){
  const row=autoDealerRows(c.brand).find(x=>x.model===c.model)||AUTO_BRANDS.find(x=>x.brand===c.brand&&x.model===c.model);
- const base=Number(row?.base||c.buy||c.market||150000);
+ const base=Number(row?.base||c.vehicleBase||c.buy||c.market||150000);
  const year=Math.max(1980,Math.min(2026,Number(c.year)||2026));
  const age=Math.max(0,2026-year),km=Math.max(0,Number(c.km)||parseInt(String(c.mileage||'0').replace(/[^0-9]/g,''),10)||0);
  const newRecommended=base*2.55; // soovituslik uus auto lõpptarbija müügihind
@@ -1036,7 +1108,7 @@ function autoTick(){
   for(let i=0;i<missing;i++){
    const candidates=AUTO_BRANDS.filter(r=>!w.used.slice(-7).some(c=>c.brand===r.brand));
    const rows=candidates.length?candidates:AUTO_BRANDS;
-   const c=autoNewCar(rows[rand(0,rows.length-1)],true);
+   const c=Math.random()<.12?militaryUsedCar():autoNewCar(rows[rand(0,rows.length-1)],true);
    c.listingExpiresAt=now+rand(120,300)*60000;
    w.used.push(c);
   }
@@ -1055,7 +1127,7 @@ function autoTick(){
    const recent=new Set(w.used.slice(-8).map(c=>c.brand));
    const candidates=AUTO_BRANDS.filter(r=>!recent.has(r.brand));
    const rows=candidates.length?candidates:AUTO_BRANDS;
-   const c=autoNewCar(rows[rand(0,rows.length-1)],true);
+   const c=Math.random()<.12?militaryUsedCar():autoNewCar(rows[rand(0,rows.length-1)],true);
    c.listingExpiresAt=now+rand(120,300)*60000;
    w.used.push(c);marketChanged=true;
   }
@@ -1063,6 +1135,7 @@ function autoTick(){
   marketChanged=true;
  }
  if(marketChanged)saveSoon();
+ militaryTenderTick(w,now);
  for(const b of AUTO_BRANDS){
   let a=w.auctions[b.brand];
   if(!a){a={brand:b.brand,end:now+8*3600000,holder:'',until:0,bids:[],starting:Math.max(500000,Math.floor(b.base*4)),lastResult:null};w.auctions[b.brand]=a}
@@ -1168,7 +1241,7 @@ app.post('/api/auto-world/accept-counter',auth,(req,res)=>{
  ok(res,u,{message:`Võtsid NPC pakkumise vastu: ${amount} €. Raha autoäri kontol.`});
 });
 app.post('/api/auto-world/fraud-ack',auth,(req,res)=>{const a=autoState(req.user),id=String(req.body.id||'');if(!Array.isArray(a.fraudAlerts))a.fraudAlerts=[];const alert=a.fraudAlerts.find(x=>x.id===id);if(!alert)return autoErr(res,'Teadet ei leitud.');alert.acknowledged=true;ok(res,req.user,{message:'Pettuseteade märgitud loetuks. Trahv ja võlg jäävad alles.'})});
-app.get('/api/auto-world',auth,(req,res)=>{autoTick();const u=req.user,a=autoState(u),w=autoWorld();res.json({account:a,depositLimits:autoDepositStatus(a),capacity:autoSlots(u),occupied:autoOccupied(u),expansionPrices:{yard:autoExpansionPrice(a,'yard'),garage:autoExpansionPrice(a,'garage')},cities:AUTO_CITIES,used:w.used.map(c=>({...c,faults:undefined,condition:undefined,description:c.description,idealPrice:autoIdealPrice(c),registration:autoRegistration(c),transport:autoTransport(c.city,a.city)})),auctions:Object.values(w.auctions).map(x=>({brand:x.brand,end:x.end,starting:x.starting,top:x.bids.reduce((m,b)=>Math.max(m,b.amount),0),myBid:x.bids.find(b=>b.userId===u.id)?.amount||0,holder:byId(x.holder)?.name||'',mine:x.holder===u.id&&x.until>Date.now(),until:x.until,status:x.holder&&x.until>Date.now()?'contract':'auction',bids:[...x.bids].sort((a,b)=>b.amount-a.amount).map(b=>({name:byId(b.userId)?.name||'Endine mängija',amount:b.amount,time:b.time||0})),lastResult:x.lastResult||null})),owned:autoOwned(u).map(c=>({...c,costSummary:autoCostSummary(c),idealPrice:autoIdealPrice(c),diagnosticPrice:autoDiagnosticPrice(c),tuneOptions:autoTuneOptions(c),faults:c.diagnosed?c.faults:undefined})),brands:AUTO_BRANDS.flatMap(r=>autoDealerRows(r.brand)),now:Date.now()})});
+app.get('/api/auto-world',auth,(req,res)=>{autoTick();const u=req.user,a=autoState(u),w=autoWorld();res.json({account:a,depositLimits:autoDepositStatus(a),capacity:autoSlots(u),occupied:autoOccupied(u),expansionPrices:{yard:autoExpansionPrice(a,'yard'),garage:autoExpansionPrice(a,'garage')},cities:AUTO_CITIES,used:w.used.map(c=>({...c,faults:undefined,condition:undefined,description:c.description,idealPrice:autoIdealPrice(c),registration:autoRegistration(c),transport:autoTransport(c.city,a.city)})),auctions:Object.values(w.auctions).map(x=>({brand:x.brand,end:x.end,starting:x.starting,top:x.bids.reduce((m,b)=>Math.max(m,b.amount),0),myBid:x.bids.find(b=>b.userId===u.id)?.amount||0,holder:byId(x.holder)?.name||'',mine:x.holder===u.id&&x.until>Date.now(),until:x.until,status:x.holder&&x.until>Date.now()?'contract':'auction',bids:[...x.bids].sort((a,b)=>b.amount-a.amount).map(b=>({name:byId(b.userId)?.name||'Endine mängija',amount:b.amount,time:b.time||0})),lastResult:x.lastResult||null})),owned:autoOwned(u).map(c=>({...c,costSummary:autoCostSummary(c),idealPrice:autoIdealPrice(c),diagnosticPrice:autoDiagnosticPrice(c),tuneOptions:autoTuneOptions(c),faults:c.diagnosed?c.faults:undefined})),brands:AUTO_BRANDS.flatMap(r=>autoDealerRows(r.brand)),militaryTenders:(w.militaryTenders||[]).map(t=>({id:t.id,car:{id:t.car.id,name:t.car.name,year:t.car.year,km:t.car.km,city:t.car.city,description:t.car.description,idealPrice:autoIdealPrice(t.car)},starting:t.starting,end:t.end,top:t.bids.reduce((m,b)=>Math.max(m,b.amount),0),bids:[...t.bids].sort((a,b)=>b.amount-a.amount).map(b=>({name:byId(b.userId)?.name||'Endine mängija',amount:b.amount,time:b.time})),myBid:t.bids.find(b=>b.userId===u.id)?.amount||0})),militaryTenderHistory:(w.militaryTenderHistory||[]).slice(0,8),now:Date.now()})});
 app.post('/api/auto-world/garage',auth,(req,res)=>{const u=req.user,a=autoState(u),city=String(req.body.city||'');if(a.city)return autoErr(res,'Garaaž on juba olemas.');if(!AUTO_CITIES.includes(city))return autoErr(res,'Vali Eesti linn.');const cost=300000;if(!autoAccountCanPay(a,cost))return autoErr(res,`Garaaži ostuks vaja ${cost} € autoäri kontol.`);a.balance-=cost;gameIncome(cost,'auto_garage_purchase',u);a.city=city;autoHistory(u,`Ostsid garaaži: ${city}.`);ok(res,u,{message:`Garaaž asub nüüd linnas ${city}. Õueplats 3 autot ja garaaž 1 auto.`})});
 app.post('/api/auto-world/expand',auth,(req,res)=>{const u=req.user,a=autoState(u),type=String(req.body.type||'');if(!a.city)return autoErr(res,'Osta esmalt garaaž.');if(!['yard','garage'].includes(type))return autoErr(res,'Vigane laiendus.');const current=a[type],cost=autoExpansionPrice(a,type);if(!autoAccountCanPay(a,cost))return autoErr(res,`Laiendus maksab ${cost} € autoäri kontolt.`);a.balance-=cost;gameIncome(cost,'auto_garage_expansion',u);a[type]++;ok(res,u,{message:`Laiendus valmis! ${type==='yard'?'Õueplatsi':'Garaaži'} kohti: ${a[type]}. Maksis ${cost} €.`})});
 app.post('/api/auto-world/bank',auth,(req,res)=>{
@@ -1199,6 +1272,20 @@ app.post('/api/auto-world/bank',auth,(req,res)=>{
   return ok(res,u,{message:`Võtsid välja ${amount-tax} €. 24% (${tax} €) läks Keskpanka.`});
  }
  return autoErr(res,'Vigane toiming.');
+});
+app.post('/api/auto-world/military-bid',auth,(req,res)=>{
+ autoTick();const u=req.user,a=autoState(u),w=autoWorld();
+ const tender=(w.militaryTenders||[]).find(t=>t.id===req.body.id&&t.status==='open');
+ const amount=Number(req.body.amount);
+ if(!a.city)return autoErr(res,'Sõjaväetehnika hankes osalemiseks vajad garaaži.');
+ if(!tender||Date.now()>=tender.end)return autoErr(res,'Hange on lõppenud või puudub.');
+ if(!Number.isSafeInteger(amount)||amount<tender.starting||amount<=tender.bids.reduce((m,b)=>Math.max(m,b.amount),0))return autoErr(res,'Pakkumine peab ületama alghinna ja eelmise kõrgeima pakkumise.');
+ if(autoOccupied(u)>=autoSlots(u))return autoErr(res,'Vaba hoiukoht puudub. Laienda garaaži või õueplatsi.');
+ const prev=tender.bids.find(b=>b.userId===u.id),diff=amount-(prev?.amount||0);
+ if(!autoAccountCanPay(a,diff))return autoErr(res,'Autoäri kontol pole broneeringuks piisavalt raha.');
+ a.balance-=diff;
+ if(prev){prev.amount=amount;prev.time=Date.now()}else tender.bids.push({userId:u.id,amount,time:Date.now()});
+ ok(res,u,{message:`Sõjaväetehnika hanke pakkumine ${amount} € esitatud. Raha broneeritud autoäri kontolt.`});
 });
 app.post('/api/auto-world/bid',auth,(req,res)=>{autoTick();const u=req.user,a=autoState(u),w=autoWorld(),brand=String(req.body.brand||''),auction=w.auctions[brand],amount=Math.floor(Number(req.body.amount));if(!a.city)return autoErr(res,'Esinduslepingu pakkumiseks on vaja garaaži.');if(!auction||auction.holder&&auction.until>Date.now())return autoErr(res,'Selle margi esindusleping on juba välja antud. Uus oksjon algab pärast lepingu lõppu.');if(Date.now()>=auction.end)return autoErr(res,'Oksjon lõppenud.');if(!Number.isSafeInteger(amount)||amount<auction.starting||amount<=auction.bids.reduce((m,b)=>Math.max(m,b.amount),0))return autoErr(res,'Pakkumine peab ületama senise kõrgeima pakkumise ja alghinna.');const prev=auction.bids.find(x=>x.userId===u.id);const legacy=!!prev&&prev.source!=='autoTrade';const diff=legacy?amount:amount-(prev?.amount||0);if(!autoAccountCanPay(a,diff))return autoErr(res,'Autoäri kontol pole pakkumise broneerimiseks piisavalt raha.');a.balance-=diff;if(legacy)u.cash+=prev.amount;if(prev){prev.amount=amount;prev.time=Date.now();prev.source='autoTrade'}else auction.bids.push({userId:u.id,amount,time:Date.now(),source:'autoTrade'});ok(res,u,{message:`Pakkumine ${amount} € esitatud. Raha broneeritud autoäri kontolt oksjoni lõpuni.`})});
 app.post('/api/auto-world/buy',auth,(req,res)=>{autoTick();const u=req.user,a=autoState(u),w=autoWorld();if(!a.city)return autoErr(res,'Osta esmalt garaaž.');if(autoOccupied(u)>=autoSlots(u))return autoErr(res,'Kõik hoiuplatsid on täis. Laienda pinda või müü auto.');let c,cost,registration=0,transport=0;if(req.body.kind==='used'){const idx=w.used.findIndex(x=>x.id===req.body.id);if(idx<0)return autoErr(res,'Auto on juba müüdud.');c=w.used[idx];registration=autoRegistration(c);transport=autoTransport(c.city,a.city);cost=c.market+registration+transport;if(!autoAccountCanPay(a,cost))return autoErr(res,`Ostuks koos registreerimise ja transpordiga vaja ${cost} € autoäri kontol.`);w.used.splice(idx,1);c.registered=true;c.city=a.city}else if(req.body.kind==='new'){const row=autoDealerRows(String(req.body.brand||'')).find(x=>x.model===req.body.model),auction=w.auctions[req.body.brand];if(!row||!auction||auction.holder!==u.id||auction.until<Date.now())return autoErr(res,'Selle margi kehtiv esindusleping puudub.');c=autoNewCar(row,false,a.city);cost=row.newDealerCost;c.market=cost;c.buy=cost;if(!autoAccountCanPay(a,cost))return autoErr(res,`Uus auto maksab ${cost} € autoäri kontolt.`)}else return autoErr(res,'Vigane auto.');a.balance-=cost;gameIncome(cost,'auto_purchase',u);c.autoCosts={purchase:cost-registration-transport,transport,registration,diagnostics:0,repairs:0,tuning:0,complete:true};u.cars.push(c);autoHistory(u,`Ostetud ${c.name}: ${cost} € (transport ${transport}, registreerimine ${registration}).`);ok(res,u,{message:`Ostsid ${c.name}. Kokku ${cost} €; transport ${transport} €, registreerimine ${registration} €.`})});

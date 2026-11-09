@@ -114,3 +114,11 @@
 - Käigu- ja taotluste logid on euroraportist väljas; vanade logide puudulikkus on märgitud.
 - Admini Keskpangast tehtavad väljamaksed ja raha likvideerimine salvestatakse nüüd samuti logisse.
 - Olemasolev andmebaas ja mängijate progress jäävad puutumata.
+
+
+## V6.97 – Autoäri kapitalisissemaksed
+- Isiklikust sularahast saab autoäri kontole kanda 100 000 kuni 10 000 000 € ühe ülekandega.
+- Liikuv 24-tunnine piir: kokku kuni 20 000 000 € ning maksimaalselt 3 sissemakset.
+- Iga edukas sissemakse maksab 200 käiku. Ebaõnnestunud katse ei võta raha ega käike.
+- Sissemakse ei ole müügitulu ega Keskpanga tulu; väljavõtmise senine 24% tasu jääb alles.
+- Sissemaksete ajalugu salvestatakse mängija autoäri andmetesse ning vanad kontojäägid säilivad.

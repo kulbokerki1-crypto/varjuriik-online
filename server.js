@@ -948,6 +948,18 @@ function autoState(u){
  }
  return a;
 }
+// v6.97: isiklikust sularahast autoäri kontole piiratud kapitalisissemaksed.
+const AUTO_DEPOSIT_WINDOW_MS=24*60*60*1000;
+const AUTO_DEPOSIT_MAX_SINGLE=10_000_000;
+const AUTO_DEPOSIT_MAX_DAY=20_000_000;
+const AUTO_DEPOSIT_MAX_COUNT=3;
+const AUTO_DEPOSIT_TURNS=200;
+function autoDepositStatus(a,now=Date.now()){
+ if(!Array.isArray(a.capitalDeposits))a.capitalDeposits=[];
+ a.capitalDeposits=a.capitalDeposits.filter(x=>Number.isFinite(Number(x.time))&&Number(x.time)>now-AUTO_DEPOSIT_WINDOW_MS&&Number.isSafeInteger(x.amount)&&x.amount>0);
+ const used=a.capitalDeposits.reduce((sum,x)=>sum+x.amount,0);
+ return {min:100000,maxSingle:AUTO_DEPOSIT_MAX_SINGLE,max24h:AUTO_DEPOSIT_MAX_DAY,maxCount:AUTO_DEPOSIT_MAX_COUNT,turnCost:AUTO_DEPOSIT_TURNS,used24h:used,count24h:a.capitalDeposits.length,remaining24h:Math.max(0,AUTO_DEPOSIT_MAX_DAY-used),remainingCount:Math.max(0,AUTO_DEPOSIT_MAX_COUNT-a.capitalDeposits.length),nextSlotAt:a.capitalDeposits.length?a.capitalDeposits[0].time+AUTO_DEPOSIT_WINDOW_MS:null};
+}
 // v6.95: igale autole salvestatakse kuluarvestus eraldi; vanu kulusid ei oletata.
 function autoCostSummary(c){
  const a=c.autoCosts;
@@ -1156,10 +1168,38 @@ app.post('/api/auto-world/accept-counter',auth,(req,res)=>{
  ok(res,u,{message:`Võtsid NPC pakkumise vastu: ${amount} €. Raha autoäri kontol.`});
 });
 app.post('/api/auto-world/fraud-ack',auth,(req,res)=>{const a=autoState(req.user),id=String(req.body.id||'');if(!Array.isArray(a.fraudAlerts))a.fraudAlerts=[];const alert=a.fraudAlerts.find(x=>x.id===id);if(!alert)return autoErr(res,'Teadet ei leitud.');alert.acknowledged=true;ok(res,req.user,{message:'Pettuseteade märgitud loetuks. Trahv ja võlg jäävad alles.'})});
-app.get('/api/auto-world',auth,(req,res)=>{autoTick();const u=req.user,a=autoState(u),w=autoWorld();res.json({account:a,capacity:autoSlots(u),occupied:autoOccupied(u),expansionPrices:{yard:autoExpansionPrice(a,'yard'),garage:autoExpansionPrice(a,'garage')},cities:AUTO_CITIES,used:w.used.map(c=>({...c,faults:undefined,condition:undefined,description:c.description,idealPrice:autoIdealPrice(c),registration:autoRegistration(c),transport:autoTransport(c.city,a.city)})),auctions:Object.values(w.auctions).map(x=>({brand:x.brand,end:x.end,starting:x.starting,top:x.bids.reduce((m,b)=>Math.max(m,b.amount),0),myBid:x.bids.find(b=>b.userId===u.id)?.amount||0,holder:byId(x.holder)?.name||'',mine:x.holder===u.id&&x.until>Date.now(),until:x.until,status:x.holder&&x.until>Date.now()?'contract':'auction',bids:[...x.bids].sort((a,b)=>b.amount-a.amount).map(b=>({name:byId(b.userId)?.name||'Endine mängija',amount:b.amount,time:b.time||0})),lastResult:x.lastResult||null})),owned:autoOwned(u).map(c=>({...c,costSummary:autoCostSummary(c),idealPrice:autoIdealPrice(c),diagnosticPrice:autoDiagnosticPrice(c),tuneOptions:autoTuneOptions(c),faults:c.diagnosed?c.faults:undefined})),brands:AUTO_BRANDS.flatMap(r=>autoDealerRows(r.brand)),now:Date.now()})});
+app.get('/api/auto-world',auth,(req,res)=>{autoTick();const u=req.user,a=autoState(u),w=autoWorld();res.json({account:a,depositLimits:autoDepositStatus(a),capacity:autoSlots(u),occupied:autoOccupied(u),expansionPrices:{yard:autoExpansionPrice(a,'yard'),garage:autoExpansionPrice(a,'garage')},cities:AUTO_CITIES,used:w.used.map(c=>({...c,faults:undefined,condition:undefined,description:c.description,idealPrice:autoIdealPrice(c),registration:autoRegistration(c),transport:autoTransport(c.city,a.city)})),auctions:Object.values(w.auctions).map(x=>({brand:x.brand,end:x.end,starting:x.starting,top:x.bids.reduce((m,b)=>Math.max(m,b.amount),0),myBid:x.bids.find(b=>b.userId===u.id)?.amount||0,holder:byId(x.holder)?.name||'',mine:x.holder===u.id&&x.until>Date.now(),until:x.until,status:x.holder&&x.until>Date.now()?'contract':'auction',bids:[...x.bids].sort((a,b)=>b.amount-a.amount).map(b=>({name:byId(b.userId)?.name||'Endine mängija',amount:b.amount,time:b.time||0})),lastResult:x.lastResult||null})),owned:autoOwned(u).map(c=>({...c,costSummary:autoCostSummary(c),idealPrice:autoIdealPrice(c),diagnosticPrice:autoDiagnosticPrice(c),tuneOptions:autoTuneOptions(c),faults:c.diagnosed?c.faults:undefined})),brands:AUTO_BRANDS.flatMap(r=>autoDealerRows(r.brand)),now:Date.now()})});
 app.post('/api/auto-world/garage',auth,(req,res)=>{const u=req.user,a=autoState(u),city=String(req.body.city||'');if(a.city)return autoErr(res,'Garaaž on juba olemas.');if(!AUTO_CITIES.includes(city))return autoErr(res,'Vali Eesti linn.');const cost=300000;if(!autoAccountCanPay(a,cost))return autoErr(res,`Garaaži ostuks vaja ${cost} € autoäri kontol.`);a.balance-=cost;gameIncome(cost,'auto_garage_purchase',u);a.city=city;autoHistory(u,`Ostsid garaaži: ${city}.`);ok(res,u,{message:`Garaaž asub nüüd linnas ${city}. Õueplats 3 autot ja garaaž 1 auto.`})});
 app.post('/api/auto-world/expand',auth,(req,res)=>{const u=req.user,a=autoState(u),type=String(req.body.type||'');if(!a.city)return autoErr(res,'Osta esmalt garaaž.');if(!['yard','garage'].includes(type))return autoErr(res,'Vigane laiendus.');const current=a[type],cost=autoExpansionPrice(a,type);if(!autoAccountCanPay(a,cost))return autoErr(res,`Laiendus maksab ${cost} € autoäri kontolt.`);a.balance-=cost;gameIncome(cost,'auto_garage_expansion',u);a[type]++;ok(res,u,{message:`Laiendus valmis! ${type==='yard'?'Õueplatsi':'Garaaži'} kohti: ${a[type]}. Maksis ${cost} €.`})});
-app.post('/api/auto-world/bank',auth,(req,res)=>{const u=req.user,a=autoState(u),amount=Math.floor(Number(req.body.amount));if(!a.city)return autoErr(res,'Vaja garaaži.');if(!Number.isSafeInteger(amount)||amount<1)return autoErr(res,'Sisesta korrektne summa.');if(req.body.dir==='in')return autoErr(res,'Autoäri kontole ei saa ise raha sisse kanda. Kontot täiendavad autoäri tulud.');if(req.body.dir==='out'){if(a.balance<amount)return autoErr(res,'Autoäri kontol pole piisavalt raha.');const tax=Math.floor(amount*.24);a.balance-=amount;u.cash+=amount-tax;gameIncome(tax,'auto_business_withdrawal_24pct',u);return ok(res,u,{message:`Võtsid välja ${amount-tax} €. 24% (${tax} €) läks Keskpanka.`})}return autoErr(res,'Vigane toiming.')});
+app.post('/api/auto-world/bank',auth,(req,res)=>{
+ const u=req.user,a=autoState(u),raw=Number(req.body.amount),amount=raw;
+ if(!a.city)return autoErr(res,'Vaja garaaži.');
+ if(!Number.isSafeInteger(amount)||amount<1)return autoErr(res,'Sisesta täisarvuline positiivne summa.');
+ if(req.body.dir==='in'){
+  const limits=autoDepositStatus(a);
+  if(amount<limits.min||amount>limits.maxSingle)return autoErr(res,'Ühe sissemakse summa peab olema 100 000–10 000 000 €.');
+  if(limits.remainingCount<1)return autoErr(res,'Viimase 24 tunni jooksul on 3 sissemakset juba tehtud.');
+  if(amount>limits.remaining24h)return autoErr(res,`24 tunni sissemaksete limiidist alles ${limits.remaining24h} €.`);
+  refresh(u);
+  if(u.turns<AUTO_DEPOSIT_TURNS)return autoErr(res,'Sissemakse tegemiseks on vaja 200 käiku.');
+  if(u.cash<amount)return autoErr(res,'Isiklikus sularahas pole piisavalt raha.');
+  // Kontrollid enne muutmist; raha liigub vaid mängija kontode vahel, Keskpanka ei lisandu.
+  u.cash-=amount;
+  u.turns-=AUTO_DEPOSIT_TURNS;
+  a.balance+=amount;
+  a.capitalDeposits.push({time:Date.now(),amount});
+  autoHistory(u,`Kapitalisissemakse isiklikust sularahast: ${amount} €; kasutatud 200 käiku.`);
+  return ok(res,u,{message:`Autoäri kontole lisatud ${amount} €. Kulus 200 käiku. 24 h jooksul veel ${AUTO_DEPOSIT_MAX_DAY-autoDepositStatus(a).used24h} € limiiti.`});
+ }
+ if(req.body.dir==='out'){
+  if(a.balance<amount)return autoErr(res,'Autoäri kontol pole piisavalt raha.');
+  const tax=Math.floor(amount*.24);
+  a.balance-=amount;u.cash+=amount-tax;
+  gameIncome(tax,'auto_business_withdrawal_24pct',u);
+  return ok(res,u,{message:`Võtsid välja ${amount-tax} €. 24% (${tax} €) läks Keskpanka.`});
+ }
+ return autoErr(res,'Vigane toiming.');
+});
 app.post('/api/auto-world/bid',auth,(req,res)=>{autoTick();const u=req.user,a=autoState(u),w=autoWorld(),brand=String(req.body.brand||''),auction=w.auctions[brand],amount=Math.floor(Number(req.body.amount));if(!a.city)return autoErr(res,'Esinduslepingu pakkumiseks on vaja garaaži.');if(!auction||auction.holder&&auction.until>Date.now())return autoErr(res,'Selle margi esindusleping on juba välja antud. Uus oksjon algab pärast lepingu lõppu.');if(Date.now()>=auction.end)return autoErr(res,'Oksjon lõppenud.');if(!Number.isSafeInteger(amount)||amount<auction.starting||amount<=auction.bids.reduce((m,b)=>Math.max(m,b.amount),0))return autoErr(res,'Pakkumine peab ületama senise kõrgeima pakkumise ja alghinna.');const prev=auction.bids.find(x=>x.userId===u.id);const legacy=!!prev&&prev.source!=='autoTrade';const diff=legacy?amount:amount-(prev?.amount||0);if(!autoAccountCanPay(a,diff))return autoErr(res,'Autoäri kontol pole pakkumise broneerimiseks piisavalt raha.');a.balance-=diff;if(legacy)u.cash+=prev.amount;if(prev){prev.amount=amount;prev.time=Date.now();prev.source='autoTrade'}else auction.bids.push({userId:u.id,amount,time:Date.now(),source:'autoTrade'});ok(res,u,{message:`Pakkumine ${amount} € esitatud. Raha broneeritud autoäri kontolt oksjoni lõpuni.`})});
 app.post('/api/auto-world/buy',auth,(req,res)=>{autoTick();const u=req.user,a=autoState(u),w=autoWorld();if(!a.city)return autoErr(res,'Osta esmalt garaaž.');if(autoOccupied(u)>=autoSlots(u))return autoErr(res,'Kõik hoiuplatsid on täis. Laienda pinda või müü auto.');let c,cost,registration=0,transport=0;if(req.body.kind==='used'){const idx=w.used.findIndex(x=>x.id===req.body.id);if(idx<0)return autoErr(res,'Auto on juba müüdud.');c=w.used[idx];registration=autoRegistration(c);transport=autoTransport(c.city,a.city);cost=c.market+registration+transport;if(!autoAccountCanPay(a,cost))return autoErr(res,`Ostuks koos registreerimise ja transpordiga vaja ${cost} € autoäri kontol.`);w.used.splice(idx,1);c.registered=true;c.city=a.city}else if(req.body.kind==='new'){const row=autoDealerRows(String(req.body.brand||'')).find(x=>x.model===req.body.model),auction=w.auctions[req.body.brand];if(!row||!auction||auction.holder!==u.id||auction.until<Date.now())return autoErr(res,'Selle margi kehtiv esindusleping puudub.');c=autoNewCar(row,false,a.city);cost=row.newDealerCost;c.market=cost;c.buy=cost;if(!autoAccountCanPay(a,cost))return autoErr(res,`Uus auto maksab ${cost} € autoäri kontolt.`)}else return autoErr(res,'Vigane auto.');a.balance-=cost;gameIncome(cost,'auto_purchase',u);c.autoCosts={purchase:cost-registration-transport,transport,registration,diagnostics:0,repairs:0,tuning:0,complete:true};u.cars.push(c);autoHistory(u,`Ostetud ${c.name}: ${cost} € (transport ${transport}, registreerimine ${registration}).`);ok(res,u,{message:`Ostsid ${c.name}. Kokku ${cost} €; transport ${transport} €, registreerimine ${registration} €.`})});
 app.post('/api/auto-world/diagnose',auth,(req,res)=>{const u=req.user,a=autoState(u),c=u.cars.find(x=>x.id===req.body.id&&x.autoV2);if(!c)return autoErr(res,'Auto puudub.');const price=autoDiagnosticPrice(c);if(a.balance<price)return autoErr(res,`Diagnostikaks on vaja ${price} € autoäri kontol.`);a.balance-=price;gameIncome(price,'auto_diagnostics',u);autoAddCost(c,'diagnostics',price);c.diagnosed=true;ok(res,u,{message:(c.faults||[]).length?`Diagnostika valmis: ${c.faults.map(f=>f.name).join(', ')}.`:'Diagnostika ei tuvastanud vigu.'})});

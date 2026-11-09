@@ -816,7 +816,11 @@ const byId=id=>Object.values(db.users).find(u=>u.id===id);
 const byName=name=>db.users[key(name)];
 const resolveUser=x=>byId(String(x||''))||byName(String(x||''));
 
-const app=express(),server=http.createServer(app),io=new Server(server);app.use(express.json({limit:'200kb'}));app.use(express.static(path.join(__dirname,'public')));
+const app=express(),server=http.createServer(app),io=new Server(server);
+app.use(express.json({limit:'200kb'}));
+// Mängu HTML sisaldab JS-koodi otse failis: väldi brauseri aegunud vahemälu pärast deploy'd.
+app.use((req,res,next)=>{if(req.path==='/'||req.path==='/index.html')res.set('Cache-Control','no-store, max-age=0, must-revalidate');next();});
+app.use(express.static(path.join(__dirname,'public')));
 function auth(req,res,next){const n=untoken((req.headers.authorization||'').replace(/^Bearer\s+/,'')),u=n&&db.users[key(n)];if(!u||u.banned)return res.status(401).json({error:'AUTH'});u.lastActive=Date.now();req.user=u;next()}
 function freeToAct(u){return !(u.jailedUntil&&u.jailedUntil>Date.now())}
 function insuranceCover(u,loss){if(!(u.insurance?.active&&u.insurance.until>Date.now()))return 0;const c=clamp(Number(u.insurance.coverage||0),0,.9),d=clamp(Number(u.insurance.deductible||0),0,.9);return Math.max(0,Math.floor(loss*c*(1-d)))}

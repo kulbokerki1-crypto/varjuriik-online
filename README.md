@@ -138,3 +138,17 @@
 - Pakkumised ja hanke võitjad kõigile nähtavad; mängija raha broneeritakse autoäri kontolt, kaotanutele tagastatakse.
 - Ostetud sõjaväetehnikale rakenduvad autoäri hoiukoha, diagnostika, remondi ja NPC müügi süsteemid.
 - Olemasolevat mängijate progressi ega varasemaid sõidukeid ei nullita.
+
+## VARJURIIK v7.00 — kogu faili kontroll ja uute autode ostunuppude parandus
+
+- Lähtutud täielikust VARJURIIK v6.99 PARANDATUD komplektist; varasemad mängusüsteemid säilivad.
+- Uute esindusautode ostunupud ei ehita enam automargi ja mudeli nime otse JavaScripti `onclick` atribuuti. Ostukäsk on seotud eraldi klikikuulajaga ning mudeliandmed loetakse nupu `data-brand` / `data-model` atribuutidest.
+- Lisatud ostunupu topeltvajutuse kaitse (nupp on ostupäringu ajal keelatud).
+- Kliendipoolsel ostukäsul on vea püüdmine ja nähtav teavitus.
+- Mängu `index.html` ei salvestata enam serveri vastuses brauseri vahemällu (`Cache-Control: no-store`), et mobiilibrauser ei näitaks pärast deploy'd vana koodi.
+- HTML-is mängu pealkiri näitab v7.00.
+- Kontrollitud täieliku `server.js` süntaks, mõlema brauseriskripti süntaks ning autokeskuse dünaamilised klikikäsud mitme näidisstsenaariumiga (Fiati esindus, kasutatud sõiduk, oma auto, tuuning, avalik oksjon ja sõjaväetehnika hange).
+- Näidis-Fiat 500 ostunupu test saatis korrektse `/api/auto-world/buy` päringu: `{kind:'new',brand:'Fiat',model:'500'}`.
+- **Piirang:** serveri integratsiooni- ja Renderi lõppkasutajatesti ei saanud siin käivitada, sest projektis vajalikud Express/Socket.IO/PostgreSQL sõltuvused ei olnud selles keskkonnas paigaldatud. Ükski test ei muutnud päris mängu andmebaasi.
+
+Paigaldamine: tõsta ZIP-i failid projekti juurkausta (`server.js`, `package.json`, `README.md` ja `public/index.html`). Ära kirjuta üle tootmiskeskkonna andmebaasi ega `data` kausta. Pärast uut Deploy'd värskenda lehte.

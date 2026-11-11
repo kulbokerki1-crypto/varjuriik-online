@@ -171,3 +171,12 @@ Paigaldamine: tõsta ZIP-i failid projekti juurkausta (`server.js`, `package.jso
 - Kamba hoone alustab 5 kohaga ja iga tasemeost annab +2 kohta, tasu ainult kamba ühiskassast. Ostuhind liigub mängu Keskpanka; olemasolevaid suuremaid kampasid ei lõhuta ega liikmeid eemaldata.
 - Kõik muudatused on olemasoleva v7.01 versiooni peale, senist andmebaasi ei nullita; uued väljad täidetakse vajadusel vaikimisi.
 - Testid: serveri ja brauseri JavaScripti süntaksikontroll. Live-Renderi serveri integratsioonitest ei ole tehtud.
+
+
+## v7.03 — profiili- ja rünnakumugavus
+- Rünnak käivitub kohe nupule vajutamisel, ilma brauseri kinnitusküsimuseta.
+- Pärast rünnakut jääb sihtmärgi profiiliaken avatuks ja tulemus ilmub samas aknas; kamba abi valik säilib.
+- Rünnaku ajal on nupp topeltvajutuse vältimiseks ajutiselt keelatud.
+- Mängijate nimekirjas on ka mängija ise; tema juures on märge „Sina” ning avaneb enda profiil (ilma eneserünnaku või enda spioneerimise nuputa).
+- Ka edetabelis on mängijate nimed vajutatavad. Oma konto lisatakse nimekirja ka siis, kui see ei mahu 200 kõrgema skooriga konto hulka.
+- Mängu andmebaasi vormingut ei muudetud; senine progress säilib.

@@ -24,3 +24,10 @@ Siinses töökeskkonnas pole mängu npm-sõltuvused (`express`, `socket.io`, `pg
 ## Juurutamine
 
 Laadi see versioon GitHubi ja lase Renderil juurutada. **Ära kustuta andmebaasi ega muuda PostgreSQL-i andmeid.** Tee enne juurutamist olemasolevast andmebaasist varukoopia, kui see on võimalik. Kui ilmub uus viga, kopeeri veakood ja logirida — see aitab tuvastada allesjäänud tõrke.
+
+
+## v7.07 – kamba abijuhi ja vormi parandus
+- Lisatud puuduv POST /api/gang/role, millega ainult juht saab kamba liiget abijuhiks määrata või tagasi liikmeks muuta.
+- Kasutatakse liikme ID-d, mitte nime; rollimuudatus logitakse, salvestatakse ja mängijat teavitatakse.
+- Kui mängija on juba kambas, on 'Loo kamp' vorm peidetud. Serveri varasem teise kamba loomise keeld jääb alles.
+- Mängijate kontosid, raha ega olemasolevaid kampasid ei nullita.

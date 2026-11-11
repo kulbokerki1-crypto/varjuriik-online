@@ -2,6 +2,7 @@
 const express=require('express');
 const http=require('http');
 const crypto=require('crypto');
+const zlib=require('zlib');
 const fs=require('fs');
 const path=require('path');
 const {Server}=require('socket.io');
@@ -226,6 +227,16 @@ function normalize(){
   const d=defaults();
   for(const k of Object.keys(d))if(db[k]===undefined)db[k]=cloneData(d[k]);
   db.meta={...d.meta,...(db.meta||{}),schemaVersion:SAVE_SCHEMA_VERSION};
+  // Previous versions embedded up to 12 full database copies in RAM and in every save.
+  // Keep rollback history, but compress snapshots individually before any save.
+  db.snapshots=Array.isArray(db.snapshots)?db.snapshots:[];
+  for(const ss of db.snapshots){
+    if(ss && ss.data && !ss.dataGzip){
+      const raw=JSON.stringify(ss.data);
+      ss.dataGzip=zlib.gzipSync(Buffer.from(raw),{level:3}).toString('base64');
+      delete ss.data;
+    }
+  }
   db.nextIds={...d.nextIds,...(db.nextIds||{})};
   db.settings={...d.settings,...(db.settings||{})};
   // V7.04: vähenda ainult vana vaikimisi 1 000 000 jõuga kamba relvad 300-ni.
@@ -285,18 +296,47 @@ function normalize(){
   for(const[gId,g]of Object.entries(db.gangs||{})){g.members=[...new Set((g.members||[]).filter(id=>{const u=byId(id);return !!u&&u.gangId===gId}))];g.assistants=[...new Set((g.assistants||[]).filter(id=>g.members.includes(id)&&id!==g.leader))];const leader=byId(g.leader);if(leader){if(leader.gangId&&leader.gangId!==gId){delete db.gangs[gId];continue}leader.gangId=gId;if(!g.members.includes(g.leader))g.members.unshift(g.leader)}else delete db.gangs[gId]}
 }
 async function initStorage(){if(DATABASE_URL){pool=new Pool({connectionString:DATABASE_URL,ssl:DATABASE_URL.includes('localhost')?false:{rejectUnauthorized:false}});await pool.query('CREATE TABLE IF NOT EXISTS game_state(id INT PRIMARY KEY,data JSONB NOT NULL,updated_at TIMESTAMPTZ DEFAULT NOW())');const r=await pool.query('SELECT data FROM game_state WHERE id=1');if(r.rows[0])db=r.rows[0].data;else await pool.query('INSERT INTO game_state(id,data) VALUES(1,$1)',[db]);console.log('PostgreSQL persistence ON')}else{if(fs.existsSync(DB_FILE)){try{db=JSON.parse(fs.readFileSync(DB_FILE,'utf8'))}catch(e){console.error('db.json read failed:',e.message)}}if(DATA_DIR==='/var/data'||process.env.DATA_DIR)console.log('Persistent file storage path:',DB_FILE);else console.warn('WARNING: DATABASE_URL/DATA_DIR missing. Render deploy may erase ./data/db.json and reset players. Configure PostgreSQL or a persistent disk.')}normalize();migrateNpcNames();ensureNpcPlayers();await saveNow()}
-// v7.06: ordered snapshots prevent overlapping PostgreSQL writes from restoring stale game state.
-let persistQueue=Promise.resolve();
-function saveNow(){
-  const snapshot=JSON.stringify(db);
-  const operation=()=>pool
-    ?pool.query('INSERT INTO game_state(id,data,updated_at) VALUES(1,$1,NOW()) ON CONFLICT(id) DO UPDATE SET data=$1,updated_at=NOW()',[snapshot])
-    :fs.promises.writeFile(DB_FILE+'.tmp',snapshot).then(()=>fs.promises.rename(DB_FILE+'.tmp',DB_FILE));
-  const pending=persistQueue.then(operation);
-  persistQueue=pending.catch(e=>{console.error('[PERSIST] Failed:',e.stack||e)});
-  return pending;
+// v7.08: A single writer coalesces bursts of changes. Previously every call
+// serialized the ENTIRE database immediately, including nested full backups,
+// and queued an unbounded number of JSON strings while PostgreSQL was slow.
+let savePending=false;
+let saveRunner=null;
+async function writeGameState(snapshot){
+  if(pool){
+    await pool.query('INSERT INTO game_state(id,data,updated_at) VALUES(1,$1,NOW()) ON CONFLICT(id) DO UPDATE SET data=$1,updated_at=NOW()',[snapshot]);
+  }else{
+    await fs.promises.writeFile(DB_FILE+'.tmp',snapshot);
+    await fs.promises.rename(DB_FILE+'.tmp',DB_FILE);
+  }
 }
-function saveSoon(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>saveNow().catch(e=>console.error('[PERSIST]',e.stack||e)),100)}
+function saveNow(){
+  savePending=true;
+  if(saveRunner)return saveRunner;
+  saveRunner=(async()=>{
+    // Combine writes from the same event-loop turn into one snapshot.
+    await new Promise(resolve=>setImmediate(resolve));
+    while(savePending){
+      savePending=false;
+      const snapshot=JSON.stringify(db);
+      try{await writeGameState(snapshot)}catch(err){
+        // Do not lose the fact that there are unsaved changes. Retry on the
+        // next scheduled save rather than looping forever on database failure.
+        savePending=true;
+        throw err;
+      }
+    }
+  })();
+  const thisRun=saveRunner;
+  thisRun.then(()=>{if(saveRunner===thisRun)saveRunner=null},err=>{
+    console.error('[PERSIST] Failed:',err.stack||err);
+    if(saveRunner===thisRun)saveRunner=null;
+  });
+  return thisRun;
+}
+function saveSoon(){
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(()=>saveNow().catch(e=>console.error('[PERSIST]',e.stack||e)),350);
+}
 
 const norm=x=>String(x||'').trim().replace(/\s+/g,' ').slice(0,18),key=x=>norm(x).toLowerCase(),rand=(a,b)=>Math.floor(Math.random()*(b-a+1))+a,clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
 function hpw(p,s=crypto.randomBytes(16).toString('hex')){return{salt:s,hash:crypto.scryptSync(String(p),s,64).toString('hex')}}
@@ -306,10 +346,25 @@ function untoken(t){try{const[p,sig]=String(t||'').split('.'),a=crypto.createHma
 function clientIp(req){return String(req.headers['x-forwarded-for']||req.socket?.remoteAddress||'').split(',')[0].trim().slice(0,80)}
 function secLog(type,req,u,extra={}){db.securityLogs.unshift({time:Date.now(),type,user:u?.name||'',userId:u?.id||'',ip:clientIp(req),ua:String(req.headers['user-agent']||'').slice(0,180),...extra});db.securityLogs=db.securityLogs.slice(0,2000)}
 function audit(actor,action,target='',details={}){db.auditLogs.unshift({time:Date.now(),actor:actor?.name||String(actor||''),action,target,details});db.auditLogs=db.auditLogs.slice(0,3000)}
-function snap(label,actor){const data=JSON.parse(JSON.stringify(db));data.snapshots=[];const x={id:String(db.nextIds.snapshot++),time:Date.now(),label:String(label||'Snapshot').slice(0,80),actor:actor?.name||'system',data};db.snapshots.unshift(x);db.snapshots=db.snapshots.slice(0,12);return x.id}
+function snap(label,actor){
+  // Store a compressed complete state but never recursively clone older backups.
+  const data=JSON.stringify({...db,snapshots:[]});
+  const dataGzip=zlib.gzipSync(Buffer.from(data),{level:3}).toString('base64');
+  const x={id:String(db.nextIds.snapshot++),time:Date.now(),label:String(label||'Snapshot').slice(0,80),actor:actor?.name||'system',dataGzip};
+  db.snapshots.unshift(x);
+  db.snapshots=db.snapshots.slice(0,12);
+  return x.id;
+}
+function restoreSnapshotData(ss){
+  if(ss.dataGzip)return JSON.parse(zlib.gunzipSync(Buffer.from(ss.dataGzip,'base64')).toString('utf8'));
+  if(ss.data)return JSON.parse(JSON.stringify(ss.data)); // legacy snapshot compatibility
+  throw Error('Varukoopia sisu puudub.');
+}
 const loginBuckets=new Map();
 function loginLimited(req,name){const now=Date.now(),id=clientIp(req)+'|'+key(name),a=(loginBuckets.get(id)||[]).filter(t=>now-t<10*60000);if(a.length>=5)return true;a.push(now);loginBuckets.set(id,a);return false}
 function clearLoginBucket(req,name){loginBuckets.delete(clientIp(req)+'|'+key(name))}
+// Login throttling keys from one-off IPs/usernames must not grow indefinitely.
+setInterval(()=>{const cut=Date.now()-10*60000;for(const [k,times] of loginBuckets){const live=times.filter(t=>t>=cut);if(live.length)loginBuckets.set(k,live);else loginBuckets.delete(k)}},5*60000).unref();
 function newUser(name,pw,role='player',email=''){const h=hpw(pw);return{id:crypto.randomUUID(),name,email:String(email||'').trim().toLowerCase().slice(0,120),...h,role,banned:false,vip:false,vipUntil:0,cash:2500000,bank:0,turns:300,hp:100,level:1,xp:0,rep:0,wanted:0,jailedUntil:0,insurance:{active:false,until:0,coverage:.3},privacy:{cash:true,bank:false,levels:true,stats:true,lastActive:false},education:0,educationProgress:0,securityLevel:1,mafiaLevel:1,propertyLevel:0,mafia:0,guards:0,weapons:{},crypto:0,city:'Paide',businesses:{},carLicense:0,cars:[],gangId:null,spies:{finnish:0,ukrainian:0,russian:0},intelLevel:0,lastSpyAt:{},bodyguard:null,bodyguardUntil:0,guardingClient:null,guardingUntil:0,businessProjects:{},businessWorkers:{},businessRejected:{},lastTurnAt:Date.now(),lastActive:Date.now(),createdAt:Date.now(),jobId:null,lastSalaryAt:Date.now(),pvpHits:{},maintenanceDue:Date.now()+86400000,maintenanceDebt:0,maintenanceLastBill:null,sessionVersion:1,lastIp:'',lastUserAgent:'',lastLoginAt:0,failedLogins:0,lockedUntil:0,stats:{wins:0,losses:0,robbed:0,pokerWins:0,crimes:0,operations:0},production:{capacityLevel:1,speedLevel:1,materials:{plant:0,chem:0,pack:0},stock:0,nextAt:0,totalMade:0,totalSold:0},nightlife:{venues:[],nextVenueId:1}}}
 
 const NPC_RENAMES={'K6ver':'Must Vares','Varikas':'Hall Hunt','Xyron':'Tume Ronk','Vexor':'Kuri Kelm','TumeX':'Vaikne Vari','Noxx':'Öine Susi','Kelmik':'Must Kass','Zynk':'Hall Rott','TontX':'Tume Tont','Kryp':'Külm Kivi','RottX':'Vana Vares','Varnx':'Metsik Nirk','HallVarju':'Pime Udu','Zerro':'Must Kaaren','SodiX':'Sodi','Nyxar':'Terav Pistrik','K2biX':'Hall Mäger','Drayx':'Kobra','VapsikX':'Vapsik','Xenoq':'Raju'};
@@ -1674,7 +1729,7 @@ app.post('/api/admin/turn-pack/delete',auth,admin,(req,res)=>res.status(410).jso
 app.post('/api/admin/turn-order',auth,admin,(req,res)=>res.status(410).json({error:'Käigutellimuste süsteem on ajutiselt eemaldatud.'}));
 app.post('/api/admin/gift',auth,admin,(req,res)=>{const x=req.body,cash=Math.max(0,Math.floor(+x.cash||0)),turns=Math.max(0,Math.floor(+x.turns||0)),vipDays=Math.max(0,Math.floor(+x.vipDays||0)),message=String(x.message||'Kingitus VARJURIIK adminilt').slice(0,200);snap('Enne masskingitust',req.user);let n=0;for(const u of Object.values(db.users)){if(u.banned)continue;creditCashWithDebt(u,cash,'admin_gift');creditTurnsWithDebt(u,turns,'admin_gift');if(vipDays){u.vip=true;u.vipUntil=Math.max(u.vipUntil||Date.now(),Date.now())+vipDays*86400000}n++;io.to('user:'+u.id).emit('toast',message)}const id=String(db.nextIds.gift++);db.gifts.push({id,time:Date.now(),actor:req.user.name,cash,turns,vipDays,message,count:n});audit(req.user,'gift_all','all',{cash,turns,vipDays,count:n});saveNow();res.json({ok:true,message:`Kingitus saadeti ${n} kasutajale.`})});
 app.post('/api/admin/snapshot',auth,admin,(req,res)=>{const id=snap(req.body.label||'Käsitsi snapshot',req.user);audit(req.user,'snapshot_create',id);saveNow();res.json({ok:true,id})});
-app.post('/api/admin/rollback',auth,admin,(req,res)=>{if(req.user.role!=='owner')return res.status(403).json({error:'Ainult owner saab rollbacki teha.'});const ss=db.snapshots.find(x=>x.id===String(req.body.id));if(!ss)return res.status(404).json({error:'Snapshot puudub.'});const keep=JSON.parse(JSON.stringify(db.snapshots));const restored=JSON.parse(JSON.stringify(ss.data));db=restored;normalize();db.snapshots=keep;audit(req.user,'rollback',ss.id,{label:ss.label});saveNow();io.emit('toast','Serveri seis taastati snapshotist. Logi vajadusel uuesti sisse.');res.json({ok:true})});
+app.post('/api/admin/rollback',auth,admin,(req,res)=>{if(req.user.role!=='owner')return res.status(403).json({error:'Ainult owner saab rollbacki teha.'});const ss=db.snapshots.find(x=>x.id===String(req.body.id));if(!ss)return res.status(404).json({error:'Snapshot puudub.'});const keep=db.snapshots.slice();const restored=restoreSnapshotData(ss);db=restored;normalize();db.snapshots=keep;audit(req.user,'rollback',ss.id,{label:ss.label});saveNow();io.emit('toast','Serveri seis taastati snapshotist. Logi vajadusel uuesti sisse.');res.json({ok:true})});
 app.post('/api/admin/market',auth,admin,(req,res)=>{snap('Enne turu muutmist',req.user);if(req.body.weapon!=null)db.settings.weaponMarket=clamp(+req.body.weapon,.25,4);if(req.body.car!=null)db.settings.carMarket=clamp(+req.body.car,.25,4);if(req.body.economy!=null)db.settings.economyMarket=clamp(+req.body.economy,.45,2.5);for(const [k,min,max] of [['travelBase',0,1e12],['bountyFee',0,.9],['businessTax',0,.9],['marketFee',0,.9],['maintenanceRate',0,.2],['bodyguardDefensePct',0,.5],['bodyguardGameFee',0,1],['workerBasePrice',0,1e9]])if(req.body[k]!=null)db.settings[k]=clamp(+req.body[k],min,max);db.settings.marketPressure=0;audit(req.user,'market_set','market',{weapon:db.settings.weaponMarket,car:db.settings.carMarket,economy:db.settings.economyMarket});saveNow();res.json({ok:true,settings:db.settings})});
 app.post('/api/admin/insurance-settings',auth,admin,(req,res)=>{const tier=String(req.body.tier||''),t=db.settings.insuranceTiers[tier];if(!t)return res.status(400).json({error:'Vigane pakett.'});if(req.body.basePrice!=null)t.basePrice=Math.max(0,Math.floor(+req.body.basePrice||0));if(req.body.coverage!=null)t.coverage=clamp(+req.body.coverage,0,.9);if(req.body.deductible!=null)t.deductible=clamp(+req.body.deductible,0,.9);audit(req.user,'insurance_settings',tier,{...t});saveNow();res.json({ok:true,settings:db.settings})});
 app.post('/api/admin/weapon-price',auth,admin,(req,res)=>{const i=Math.floor(+req.body.index),price=Math.max(1000,Math.min(250000,Math.floor(+req.body.price||0)));if(!WEAPONS[i]||i===0)return res.status(400).json({error:'Vigane relv.'});db.settings.weaponPriceOverrides[i]=price;audit(req.user,'weapon_price',String(i),{price});saveNow();res.json({ok:true,weapons:WEAPONS.map((w,j)=>({...w,price:weaponPrice(j)}))})});
@@ -1763,4 +1818,5 @@ setInterval(()=>{
   if(clock?.changed)saveSoon();
 },15000);
 setInterval(()=>safeJob('npcTick',npcTick),60000);
-(async()=>{await initStorage();let ownerChanged=false;if(OWNER_PASSWORD&&!db.users[key(OWNER_USERNAME)]){db.users[key(OWNER_USERNAME)]=newUser(OWNER_USERNAME,OWNER_PASSWORD,'owner');ownerChanged=true}const owner=db.users[key(OWNER_USERNAME)];if(owner&&owner.role!=='owner'){owner.role='owner';ownerChanged=true}for(const u of Object.values(db.users)){if(owner&&u.id!==owner.id&&u.role==='owner'){u.role='admin';ownerChanged=true}}if(ownerChanged)await saveNow();server.listen(PORT,()=>console.log(`VARJURIIK v6.80 running on ${PORT}`))})().catch(e=>{console.error(e);process.exit(1)});
+setInterval(()=>{const m=process.memoryUsage(),mb=v=>Math.round(v/1048576);console.log(`[MEMORY] rss=${mb(m.rss)}MB heap=${mb(m.heapUsed)}/${mb(m.heapTotal)}MB external=${mb(m.external)}MB users=${Object.keys(db.users).length} snapshots=${db.snapshots.length}`)},60000).unref();
+(async()=>{await initStorage();let ownerChanged=false;if(OWNER_PASSWORD&&!db.users[key(OWNER_USERNAME)]){db.users[key(OWNER_USERNAME)]=newUser(OWNER_USERNAME,OWNER_PASSWORD,'owner');ownerChanged=true}const owner=db.users[key(OWNER_USERNAME)];if(owner&&owner.role!=='owner'){owner.role='owner';ownerChanged=true}for(const u of Object.values(db.users)){if(owner&&u.id!==owner.id&&u.role==='owner'){u.role='admin';ownerChanged=true}}if(ownerChanged)await saveNow();server.listen(PORT,()=>console.log(`VARJURIIK v7.08 running on ${PORT}`))})().catch(e=>{console.error(e);process.exit(1)});

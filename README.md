@@ -31,3 +31,20 @@ Laadi see versioon GitHubi ja lase Renderil juurutada. **Ära kustuta andmebaasi
 - Kasutatakse liikme ID-d, mitte nime; rollimuudatus logitakse, salvestatakse ja mängijat teavitatakse.
 - Kui mängija on juba kambas, on 'Loo kamp' vorm peidetud. Serveri varasem teise kamba loomise keeld jääb alles.
 - Mängijate kontosid, raha ega olemasolevaid kampasid ei nullita.
+
+## v7.08 – Node.js mälu ja salvestamise parandus
+
+Renderi logi `FATAL ERROR: ... JavaScript heap out of memory` kinnitab, et serveri Node.js protsess sai mälu otsa. **See ei tõesta ühte konkreetset mäluleket.** Koodis leiti siiski kaks suurt mäluriskiga kohta:
+
+1. **Varukoopiate tihendamine:** admini snapshotid võisid sisaldada kuni 12 täielikku mänguseisu koopiat. Need olid ka iga andmebaasisalvestuse sees. Nüüd pakitakse olemasolevad ja uued varukoopiad gzip-vormingusse. Kõik senised 12 varukoopiat on mõeldud alles jääma; rollback oskab tihendatud koopia taastada.
+2. **Salvestuste koondamine:** varem tehti `JSON.stringify(db)` kohe iga `saveNow()` korral ning aeglase PostgreSQL-i ajal võis ootele jääda palju suuri tekstikoopiaid. Nüüd on maksimaalselt üks andmebaasikirjutus korraga ja samal ajal tekkivad muudatused koondatakse uueks salvestuseks. Vea korral jääb salvestuse vajadus alles ja järgmine salvestus proovib uuesti.
+3. **Sisselogimise piiraja mälu:** aegunud IP/kasutajanime võtmed eemaldatakse 5 minuti järel.
+4. **Mäludiagnostika:** Renderi logides ilmub kord minutis `[MEMORY] rss=... heap=...`; sinna ei kirjutata kasutajate salasõnu ega mänguandmeid.
+
+Mängureegleid, rahasummasid, kontosid, kambasid ja autode andmeid selle parandusega ei muudetud. Enne Renderisse paigaldamist on soovitatav teha PostgreSQL andmebaasist varukoopia.
+
+### Kontrollid
+
+- `node --check server.js` ja mõlema brauseri sisemise skripti kontroll läbisid.
+- `node tests/test-memory.js` kontrollib varukoopiate tihendamist, taastamist ja kattuvate salvestuste koondamist; kõik testid läbisid.
+- Täielikku koormustesti Renderi tegeliku andmebaasi, kasutajate hulga ja taustaprotsessidega siin teha ei saanud. **Kui `heap out of memory` kordub, on vaja Renderi `[MEMORY]` näite, logide ajarida ja andmebaasi mahtusid, et järgmine kitsaskoht leida.**

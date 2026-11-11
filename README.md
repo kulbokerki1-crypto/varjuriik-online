@@ -160,3 +160,14 @@ Paigaldamine: tõsta ZIP-i failid projekti juurkausta (`server.js`, `package.jso
 - Skoori kaalud: kasum 35%, müükide arv 25%, garaaž/õueplats 15%, autopark 10%, kehtivad esindused 10%, maine 5%; trahvid vähendavad skoori.
 - Müügiarvestus algab versioonist v7.01, eelnevalt salvestamata tehinguid ei fabritseerita.
 - Uued statistikaväljad lisatakse olemasolevale mängijale ilma olemasoleva progressi nullimiseta.
+
+# VARJURIIK v7.02 — kambad ja mängija profiil
+
+- Mängija nimele vajutades avaneb kohe mobiilis sobiv avalik profiili hüpikaken; ründamine on üksnes selles profiiliaknas. Rünne 30 käiku, valikuline kamba abi +50 käiku.
+- Avalikus profiilis ei avaldata pangakontot, laene ega ründe- või kaitsejõudu; kuvatakse mängu olemasolevad andmed (kasutajanimi, üldskoor, sularaha, haridus, tase, linn, kinnisvara, kamp, roll ja aktiivsus).
+- Kamba kaitse lisandub serveri võitlusarvestuses automaatselt: min(turvalevel,100)% kamba kaitsepunktidest. Oma avalehel näeb mängija isiklikku kaitset, kamba lisakaitset ja kogukaitset. Ründeabi: min(maffialevel,100)% kamba ründepunktidest, ainult eraldi kinnitusega.
+- Avalik kampade skooride edetabel, omanik, liikmete arv; kampade avalikus vaates juht, abijuhid, liikmed, hoone, lisainfo. Relvaladu ja täpsed võitluspunktid jäävad ainult kamba liikmetele.
+- Privaatne kamba foorum teemade ning vastustega; liikmesuse kontroll toimub serveris.
+- Kamba hoone alustab 5 kohaga ja iga tasemeost annab +2 kohta, tasu ainult kamba ühiskassast. Ostuhind liigub mängu Keskpanka; olemasolevaid suuremaid kampasid ei lõhuta ega liikmeid eemaldata.
+- Kõik muudatused on olemasoleva v7.01 versiooni peale, senist andmebaasi ei nullita; uued väljad täidetakse vajadusel vaikimisi.
+- Testid: serveri ja brauseri JavaScripti süntaksikontroll. Live-Renderi serveri integratsioonitest ei ole tehtud.

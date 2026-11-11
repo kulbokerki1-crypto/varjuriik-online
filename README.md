@@ -1,3 +1,11 @@
+## V7.04 – Kamba relvade tasakaalustus
+
+- Kamba ründerelv: +300 rünnet, +150 kaitset.
+- Kamba kaitserelv: +150 rünnet, +300 kaitset.
+- Olemasolevate relvade arv säilib; jõud arvutatakse edaspidi uue väärtusega.
+- Vana vaikimisi 1 000 000 jõu seadistus viiakse ühekordselt 300 peale ka olemasolevas andmebaasis. Kui admin oli väärtust varem muutnud, jääb tema muudatus alles.
+- Relvade hind, skoor ja kamba ründamise/kaitsmise reeglid on muutmata.
+
 # VARJURIIK v6.99 — autokeskuse brauserivea parandus
 
 - Parandatud uute autode ostunuppude vigane HTML-sündmusekäsu koostamine. Automargi ja mudeli väärtused edastatakse turvaliselt kodeeritult, nii et brauseri JavaScripti ei teki süntaksiviga.

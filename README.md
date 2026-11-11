@@ -188,3 +188,13 @@ Paigaldamine: tõsta ZIP-i failid projekti juurkausta (`server.js`, `package.jso
 - Mängijate nimekirjas on ka mängija ise; tema juures on märge „Sina” ning avaneb enda profiil (ilma eneserünnaku või enda spioneerimise nuputa).
 - Ka edetabelis on mängijate nimed vajutatavad. Oma konto lisatakse nimekirja ka siis, kui see ei mahu 200 kõrgema skooriga konto hulka.
 - Mängu andmebaasi vormingut ei muudetud; senine progress säilib.
+
+
+## V7.05 — Kamba skooriarvestuse parandus
+- Kamba edetabel ja sisevaade kasutavad nüüd sama skoorifunktsiooni.
+- Kamba skoori annavad ainult kamba relvad ja kamba hoone; liikmete isiklikku skoori ei arvestata.
+- Kamba ründe- ja kaitserelva baasskoor on 320 punkti nagu mängija ründerelval.
+- Iga järgmise 100 relva järel tõuseb järgmiste relvade punktiväärtus 5%: 1–100 = 320, 101–200 = 336, 201–300 = 352.
+- Hoone skoor kasutab mängija kinnisvara progressionScore kõverat: kamba hoonetase 1 vastab kinnisvaratasemele 0, tase 2 tasemele 1 jne.
+- Relvade ja hoone skoor on kamba sisevaates eraldi nähtavad; relvaturg näitab järgmise relva skoori.
+- Vana 5 000 000 relvaskoori väärtus asendatakse käivitamisel ühekordselt 320-ga. Relvade arv, hooned, kassa, liikmed ja muu progress jäävad alles.

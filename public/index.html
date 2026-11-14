@@ -11,6 +11,51 @@
 #p-home .chat{max-height:280px;overflow-y:auto}
 @media(max-width:760px){#autoWorldBox .auto-list{max-height:none!important;overflow-y:visible!important;touch-action:pan-y}#autoWorldBox .auto-list .notice{min-width:0;max-width:100%;overflow-wrap:anywhere}}
 @media(max-width:600px){#autoWorldBox{max-width:100%;overflow-x:hidden}#p-games .actions{display:flex;flex-wrap:wrap}}
+</style><style>
+/* VARJURIIK v8.0 – kompaktne kasutatud autode nimekiri.
+   Ilma pesastatud kerimiseta: telefonis saab lohistada kaardi keskelt. */
+#autoWorldBox .auto-used-list,
+#carMarket .auto-used-list {
+ max-height:none!important; height:auto!important; overflow:visible!important;
+ overscroll-behavior:auto!important; touch-action:auto;
+ display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));
+ gap:8px; width:100%; min-width:0;
+}
+#carMarket .auto-used-card {
+ padding:9px 10px; margin:0; min-width:0; overflow:visible;
+ touch-action:auto; overscroll-behavior:auto;
+}
+#carMarket .auto-used-head {display:flex;align-items:center;gap:10px;min-width:0}
+#carMarket .auto-used-head .auto-photo {
+ width:68px; min-width:68px; height:62px; min-height:62px;
+ margin:0; font-size:26px; line-height:1; flex-shrink:0;
+}
+#carMarket .auto-used-head .auto-photo small {
+ display:block; font-size:9px; max-width:64px; text-align:center;
+ overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+#carMarket .auto-used-heading {flex:1;min-width:0}
+#carMarket .auto-used-heading>b {display:block;font-size:14px;line-height:1.25}
+#carMarket .auto-used-meta {font-size:11px;line-height:1.35;margin-top:3px;overflow-wrap:anywhere}
+#carMarket .auto-used-prices {display:flex;gap:6px 12px;flex-wrap:wrap;align-items:baseline;margin-top:6px}
+#carMarket .auto-used-prices>b {font-size:13px}
+#carMarket .auto-used-prices>.mut, #carMarket .auto-used-extra {font-size:11px}
+#carMarket .auto-used-extra {margin-top:3px;line-height:1.35}
+#carMarket .auto-used-condition {font-size:11px;margin-top:4px;color:var(--m)}
+#carMarket .auto-used-condition>summary {max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+#carMarket .auto-used-condition[open]>summary {white-space:normal}
+#carMarket .auto-used-condition>div {padding:5px 0;line-height:1.4}
+#carMarket .auto-used-actions {display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:7px;padding-top:7px;border-top:1px solid #273145}
+#carMarket .auto-used-actions>b {font-size:12px;min-width:0}
+#carMarket .auto-used-actions>.btn {padding:6px 10px;font-size:12px;flex-shrink:0}
+#carMarket .auto-used-intro {line-height:1.45;margin-bottom:5px}
+#carMarket .auto-used-guide {padding:7px 10px;margin:5px 0 12px}
+#carMarket .auto-used-guide>summary {cursor:pointer}
+#carMarket .auto-used-guide p {margin-bottom:0}
+@media(max-width:760px){
+ #carMarket .auto-used-list {grid-template-columns:1fr!important;touch-action:auto!important}
+ #carMarket .auto-used-card {overflow:visible!important}
+}
 </style>
 </head><body>
 <div id="auth" class="auth wrap"><div class="card"><div class="brand">VARJU<i>RIIK</i> 8.0 TEST</div><p class="mut">Multiplayer majandus- ja maffiamäng</p><div class="actions"><button class="btn good" onclick="mode='login';drawAuth()">Logi sisse</button><button class="btn" onclick="mode='register';drawAuth()">Loo konto</button></div><div id="af" style="margin-top:10px"></div><button class="btn ghost" style="width:100%;margin-top:7px" onclick="forgotPw()">Unustasin parooli</button><div id="ae" class="red"></div></div></div>
@@ -40,6 +85,16 @@
 </main></div></div><div id="toast" class="toast"></div><script src="/socket.io/socket.io.js"></script><script>
 let autoData=null,autoLastFetch=0,autoLoading=false;
 function autoImg(c){const type=c.brand||'auto';const first={'Škoda':'🚙','Toyota':'🚗','BMW':'🏎️','Audi':'🚘','Mercedes-Benz':'🚘','Porsche':'🏎️','Opel':'🚙','Citroën':'🚗'}[type]||'🚗';return `<div class="auto-photo" aria-label="${esc(type)} illustratsioon">${first}<small>${esc(type)} ${esc(c.model||'')}</small></div>`}
+function autoUsedCard(c){
+ const total=(Number(c.market)||0)+(Number(c.transport)||0)+(Number(c.registration)||0);
+ return `<article class="notice auto-used-card">
+   <div class="auto-used-head">${autoImg(c)}<div class="auto-used-heading"><b>${esc(c.name)}</b><div class="mut auto-used-meta">${esc(String(c.year||''))} · ${esc(String(c.mileage||''))} · ${esc(c.city||'')}</div></div></div>
+   <div class="auto-used-prices"><b>Hind ${fmt(c.market)}</b><span class="mut">Ideaalne ${fmt(c.idealPrice)}</span></div>
+   <div class="mut auto-used-extra">Transport ${fmt(c.transport)} · registreerimine ${fmt(c.registration)}</div>
+   <details class="auto-used-condition"><summary>Seisukord: ${esc(c.description||'Andmed puuduvad')}</summary><div class="mut">${esc(c.description||'Andmed puuduvad')}</div></details>
+   <div class="auto-used-actions"><b>Kokku ${fmt(total)}</b><button class="btn good" onclick="autoAction('buy',{kind:'used',id:'${esc(String(c.id))}'})">Osta · 5⚡</button></div>
+ </article>`;
+}
 function autoAction(route,body){return post('/api/auto-world/'+route,body).then(j=>{if(j)return loadAutoWorld()})}
 function autoShowModels(brand){const el=document.getElementById('auto-new-models');if(el){el.open=true;el.scrollIntoView({behavior:'smooth',block:'start'});}}
 // Esinduse ostunupud: kasuta andmeatribuute, mitte dünaamilist inline-JavaScripti.
@@ -116,7 +171,7 @@ ${(a.fraudAlerts||[]).filter(x=>!x.acknowledged).map(x=>`<div class="danger" sty
 <details class="auto-auctions" id="auto-new-models"><summary>🚘 Uued autod – minu aktiivsed esindused</summary><p class="mut">Oksjon annab õiguse kogu margi uute mudelite ostmiseks kolmeks päevaks. Iga mudel maksab erinevalt. Ost maksab 5 käiku auto kohta. Kõik ostud autoäri kontolt.</p>${j.auctions.filter(x=>x.mine).map(x=>`<div class="notice"><b>${esc(x.brand)} · esindusleping kuni ${new Date(x.until).toLocaleString('et-EE')}</b><div class="auto-list">${j.brands.filter(r=>r.brand===x.brand).map(r=>`<div class="row"><div><b>${esc(r.brand)} ${esc(r.model)}</b><div class="mut">Sisseost: ${fmt(r.newDealerCost)} · soovituslik müük: ${fmt(r.newRecommendedPrice)}</div></div><button type="button" class="btn good auto-buy-new" data-brand="${encodeURIComponent(r.brand)}" data-model="${encodeURIComponent(r.model)}">Osta</button></div>`).join('')}</div></div>`).join('')||'<p class="mut">Sul pole hetkel ühtegi kehtivat esinduslepingut.</p>'}</details>
 <details id="auto-auctions" class="auto-auctions" ${localStorage.getItem('vr_auto_auction_open')==='yes'?'open':''} ontoggle="localStorage.setItem('vr_auto_auction_open',this.open?'yes':'no')"><summary>🏢 Avalikud esinduslepingute oksjonid (${j.auctions.length}) — näita / peida</summary><p class="mut">Uue auto edasimüügihind ideaalses seisukorras on allpool iga margi juures. Uue auto esinduse sisseostuhind ja soovituslik müügihind võivad erineda.</p><p class="mut">Kõik pakkumised ja pakkujad on nähtavad. Oksjon kestab 8 tundi, võitja omab margi ainuõigust 3 päeva. Uus oksjon avaneb alles lepingu lõppedes.</p><div class="auto-auctions-scroll"><div class="auto-list">${j.auctions.map(x=>`<details class="notice auto-auction-brand" id="auto-auction-${j.auctions.indexOf(x)}"><summary><b>${esc(x.brand)}</b> ${x.mine?'✅ Sinu leping':''}<div class="mut">${(()=>{const r=j.brands.find(r=>r.brand===x.brand);return r?'Esindusõigus kõigile '+esc(x.brand)+' mudelitele ('+j.brands.filter(z=>z.brand===x.brand).length+' mudelit)':''})()}</div><div class="mut">${x.status==='contract'?`🔒 Esindusleping kehtib kuni ${new Date(x.until).toLocaleString('et-EE')} · võitja ${esc(x.holder)}. Uus oksjon pärast lepingu lõppu.`:`🟡 Avalik oksjon lõpeb ${new Date(x.end).toLocaleString('et-EE')} · kõrgeim pakkumine ${fmt(x.top||x.starting)}`}</div>${x.status==='auction'?`<div class="mut" style="margin-top:7px"><b>Pakkumiste ajalugu:</b> ${x.bids.length?x.bids.map(b=>`<div class="row"><span>${esc(b.name)}</span><b>${fmt(b.amount)}</b></div>`).join(''):'Pakkumisi veel ei ole'}</div>`:''}${x.lastResult?`<div class="mut" style="margin-top:7px">Eelmise oksjoni tulemus: ${x.lastResult.winner?`${esc(x.lastResult.winner)} võitis ${fmt(x.lastResult.amount)} pakkumisega`:'pakkumisi ei tehtud'}</div>`:''}<div class="actions">${x.status==='auction'?`<button class="btn gold" onclick="autoBid('${esc(x.brand).replace(/'/g,'')}',${x.top||x.starting})">Tee pakkumine</button>`:''}${x.mine?`<button class="btn good" onclick="autoShowModels('${esc(x.brand)}')">Vali uus ${esc(x.brand)} mudel</button>`:''}</div></details>`).join('')}</div></div></details>`;
 if(ui)for(const id of oldOpen){const el=document.getElementById(id);if(el)el.open=true;}
-let market=document.getElementById('carMarket');if(market)market.innerHTML=`<p class="mut">Ostuhind on üldjuhul alla ideaalse turuväärtuse. Varjatud rikked, remont ja transport võivad kasumi ära süüa. Turuhinnad on VARJURIIGI mängusisesed hinnangud (mudel, vanus, läbisõit), mitte päris autokuulutuste reaalajas andmed. Hinnang eeldab ideaalset seisukorda ega avalda peidetud rikkeid.</p><p class="mut">Iga auto ost maksab 5 käiku. Kasutatud autode turuvaru on süsteemi loodud; NPC ostjad ja müüjad tegutsevad automaatselt, kuid bot-mängijaid ei ole. Kuulutuses kirjeldatud seisukord ei pruugi olla tegelik. Auto toomisel teise linna lisandub transport ja registreerimine.</p><h4>🚗 Tavalised kasutatud autod</h4><div class="auto-list">${j.used.filter(c=>c.vehicleClass!=='military').map(c=>`<div class="notice">${autoImg(c)}<b>${esc(c.name)}</b><div class="mut">${c.year} · ${esc(c.mileage)} · ${esc(c.city)} · ${esc(c.description||'')}</div><div class="row"><div><b>Müügihind ${fmt(c.market)}</b><div class="mut">Soovituslik turuhind ideaalses seisukorras: <b>${fmt(c.idealPrice)}</b></div></div><span class="mut">Transport ${fmt(c.transport)} · registreerimine ${fmt(c.registration)}</span></div><button class="btn good" onclick="autoAction('buy',{kind:'used',id:'${c.id}'})">Osta (${fmt(c.market+c.transport+c.registration)})</button></div>`).join('')}</div><h4>🪖 Kasutatud sõjaväetehnika (demilitariseeritud)</h4><p class="mut">Rasked sõidukid, kallim diagnostika ja võimalikud peidetud rikked. Töötavaid relvasüsteeme ei ole.</p><div class="auto-list">${j.used.filter(c=>c.vehicleClass==='military').map(c=>`<div class="notice">${autoImg(c)}<b>${esc(c.name)}</b><div class="mut">${c.year} · ${esc(c.mileage)} · ${esc(c.city)} · ${esc(c.description||'')}</div><div class="row"><div><b>Hind ${fmt(c.market)}</b><div class="mut">Ideaalne turuhind ${fmt(c.idealPrice)}</div></div><span class="mut">Transport ${fmt(c.transport)} · registreerimine ${fmt(c.registration)}</span></div><button class="btn good" onclick="autoAction('buy',{kind:'used',id:'${c.id}'})">Osta (${fmt(c.market+c.transport+c.registration)})</button></div>`).join('')||'<p class="mut">Sõjaväetehnikat pole hetkel müügis; turule lisanduvad kuulutused aja jooksul.</p>'}</div>`;
+let market=document.getElementById('carMarket');if(market)market.innerHTML=`<p class="mut auto-used-intro">Iga kasutatud auto ost maksab <b>5 käiku</b>. Kontrolli müügihinda ja kõiki lisakulusid enne ostmist.</p><details class="notice auto-used-guide"><summary>ℹ️ Kuidas kasutatud autode hinnad kujunevad?</summary><p class="mut">Ostuhind on üldjuhul alla ideaalse turuväärtuse. Varjatud rikked, remont ja transport võivad kasumi ära süüa. Turuhinnad on VARJURIIGI mängusisesed hinnangud (mudel, vanus, läbisõit), mitte päris autokuulutuste reaalajas andmed. Seisukord ei pruugi olla tegelik. NPC ostjad ja müüjad tegutsevad automaatselt, kuid bot-mängijaid ei ole.</p></details><h4>🚗 Tavalised kasutatud autod</h4><div class="auto-list auto-used-list">${j.used.filter(c=>c.vehicleClass!=='military').map(c=>autoUsedCard(c)).join('')||'<p class="mut">Hetkel pole tavakasutatud autosid müügis; nimekiri täieneb.</p>'}</div><h4>🪖 Kasutatud sõjaväetehnika (demilitariseeritud)</h4><div class="auto-list auto-used-list">${j.used.filter(c=>c.vehicleClass==='military').map(c=>autoUsedCard(c)).join('')||'<p class="mut">Sõjaväetehnikat pole hetkel müügis; turule lisanduvad kuulutused aja jooksul.</p>'}</div>`;
 }catch(e){msg(e.message||'Autokeskus ei avanenud.')}finally{autoLoading=false}}
 // Autokeskust värskendatakse avamisel või tegevuse järel; automaatne DOM-i nullimine eemaldatud.
 </script><script>

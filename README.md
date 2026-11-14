@@ -20,3 +20,14 @@ See ZIP on pakitud vanade versioonide eeskujul: `server.js`, `package.json`, `RE
 - `audit/` moodulite kaks `require`-viidet on asendatud sisemiste abifunktsioonidega.
 
 **Ei ole tehtud** päris PostgreSQL-i integratsiooni, koormus- ega täielikku mängufunktsionaalsuse testi. Ei ole valmis põhiserverisse paigaldamiseks.
+
+## Uus muudatus: kasutatud autode kompaktne mobiilivaade (14.11.2026)
+
+- Kasutatud tavaautod ja demilitariseeritud sõjaväetehnika on madalates, kompaktsetes kaartides.
+- Suure pildi asemel on väike autoikoon, auto andmed, ostuhind, ideaalhind, transport, registreerimine ja koguhind.
+- Seisukorra pikem kirjeldus avaneb kaardil eraldi.
+- Kasutatud autode loend ei püüa telefoni kerimist kinni: eraldi `max-height`/`overflow-y:auto` kerimisala on eemaldatud; leht kerib üles-alla ka kaardi keskelt.
+- Ostunupp ja serveri auto ostmise reegel on muutmata: 5 käiku ühe auto ostuks.
+- Kontrollitud JavaScripti süntaks, kolme näidiskaardi kuvamine ja mobiilibrauseris kerimine (Chrome/Chromium; lokaalne UI-katse).
+
+See ei tähenda, et muud pooleliolevad VARJURIIK 8.0 PostgreSQL-i turvatestid oleksid lõpetatud. Pakett on endiselt ainult **eraldi testkeskkonnale**.

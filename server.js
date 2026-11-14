@@ -9,6 +9,365 @@ const {Server}=require('socket.io');
 const {Pool}=require('pg');
 const nodemailer=require('nodemailer');
 
+// Bundled read-only v8 admin previews; no audit/ folder needed.
+const __v8BotCleanup = (() => {
+  const module = { exports: {} };
+'use strict';
+/**
+ * v8 — bot PLAYER cleanup for an isolated state copy ONLY.
+ * Auto-trade NPC market functions do not use db.users[npc] and are untouched.
+ * Not connected to any live mutation API or startup migration.
+ */
+const crypto = require('crypto');
+const ACTIVE_LOAN = new Set(['active', 'overdue', 'pending']);
+const ACTIVE_OFFER = new Set(['pending']);
+const HARD_BLOCKERS = new Set(['bad_bot_id','privileged_bot','duplicate_id']);
+// Test data may be intentionally discarded before the announced full reset.
+// Even then, identity/privilege integrity errors cannot be bypassed.
+const TEST_WIPE_CONFIRMATION = 'KUSTUTA_TESTBOTID_JA_SEOSED';
+const own = (o,k) => Object.prototype.hasOwnProperty.call(o||{},k);
+const entries = o => (o && typeof o==='object'&&!Array.isArray(o))?Object.entries(o):[];
+const num = v => { const n=Number(v); return Number.isFinite(n)?n:0; };
+const str = v => String(v==null?'':v);
+const unique = a => [...new Set(a)];
+const clone = s => JSON.parse(JSON.stringify(s));
+
+function planBotCleanup(state, now=Date.now()){
+  if (!state || !state.users || typeof state.users!=='object' || Array.isArray(state.users)) throw Error('Kasutajate tabel puudub.');
+  const botEntries=entries(state.users).filter(([,u])=>u?.npc===true);
+  const ids=new Set(botEntries.map(([,u])=>str(u.id)));
+  const names=botEntries.map(([,u])=>u.name||'');
+  const bot=(id)=>id!=null&&ids.has(str(id));
+  const human=(id)=>id!=null&&str(id)!==''&&!bot(id);
+  const blocks=[];
+  const seen=new Set();
+  const add=(kind,ref,detail)=>{const k=kind+':'+ref;if(!seen.has(k)){seen.add(k);blocks.push({kind,ref:str(ref),detail})}};
+  const sums={botCash:0,botBank:0,botAutoAccount:0,botNightlifeAccounts:0,botPlayerBankCapital:0,botCentralUnpaid:0,botCentralTurnsUnpaid:0,botPlayerLoanUnpaid:0,botBidReservations:0,botGangFunds:0,botOnlyActiveLotteryPot:0};
+  for(const [key,u] of botEntries){
+    if(!u?.id||!str(u.id).trim())add('bad_bot_id',key,'Puuduv bot ID.');
+    if(u?.role==='owner'||u?.role==='admin')add('privileged_bot',key,'Owner/admin kontot ei tohi automaatselt kustutada.');
+    sums.botCash+=num(u.cash);sums.botBank+=num(u.bank);sums.botAutoAccount+=num(u.autoTrade?.balance);
+    for(const v of u.nightlife?.venues||[]) sums.botNightlifeAccounts+=num(v.account);
+  }
+  const humanIds=new Set(entries(state.users).filter(([,u])=>u?.npc!==true).map(([,u])=>str(u.id)));
+  for (const id of ids)if(humanIds.has(id))add('duplicate_id',id,'Sama kasutaja-ID on botil ja päris mängijal.');
+  for(const [k,b] of entries(state.playerBanks)) if(bot(k)||bot(b?.owner)) sums.botPlayerBankCapital+=num(b?.capital);
+  for(const [k,l] of entries(state.loans)){
+    if(!bot(l?.borrower)&&!bot(l?.bankOwner))continue;
+    sums.botPlayerLoanUnpaid+=Math.max(0,num(l.unpaid));
+    if((ACTIVE_LOAN.has(l?.status)||num(l?.unpaid)>0) && (human(l.borrower)||human(l.bankOwner)))
+      add('human_player_loan',k,'Aktiivne laen seob boti päris mängija või tema pangaga. Vaja eraldi arveldust.');
+  }
+  for(const [k,l] of entries(state.gameBank?.loans))if(bot(l?.userId)){
+    const v=Math.max(0,num(l.unpaid));
+    if(l?.type==='turns')sums.botCentralTurnsUnpaid+=v;else sums.botCentralUnpaid+=v;
+  }
+  for(const [gId,g] of entries(state.gangs)){
+    if(bot(g.leader)){
+      sums.botGangFunds+=Math.max(0,num(g.fund));
+      if((g.members||[]).some(human)||(g.assistants||[]).some(human)||entries(state.users).some(([,u])=>u?.npc!==true&&u?.gangId===gId))
+        add('human_in_bot_gang',gId,'Bot juhib päris mängijatega kampi. Liikmete olukord vajab otsust.');
+    }
+  }
+  for(const [uk,u] of entries(state.users))if(u?.npc!==true){
+    if(bot(u.bodyguard)&&num(u.bodyguardUntil)>now)add('human_bodyguard',uk,'Päris mängijal on bot-ihukaitsja aktiivne.');
+    if(bot(u.guardingClient)&&num(u.guardingUntil)>now)add('human_guarding',uk,'Päris mängija töötab botile aktiivse ihukaitsjana.');
+  }
+  for(const [k,o] of entries(state.bodyguardOffers))if(bot(o?.clientId)||bot(o?.guardId)){
+    if(ACTIVE_OFFER.has(o?.status) && (human(o.clientId)||human(o.guardId)))
+      add('human_bodyguard_offer',k,'Päris mängijaga seotud ihukaitsjapakkumine/leping.');
+  }
+  for(const [k,b] of entries(state.bounties))if(bot(b?.posterId)||bot(b?.targetId)){
+    if(b?.active && (human(b.posterId)||human(b.targetId)))
+      add('human_bounty',k,'Aktiivne pearaha puudutab päris mängijat või tema juba makstud preemiat.');
+  }
+  function checkLottery(L,id){
+    if(!L||!L.active)return;
+    const idsIn=Object.keys(L.tickets||{}).filter(k=>num(L.tickets[k])>0);
+    const involvesBot=bot(L.organizerId)||idsIn.some(bot);
+    const involvesHuman=human(L.organizerId)||idsIn.some(human);
+    if(involvesBot && involvesHuman)add('human_lottery',id,'Aktiivses loosis on päris mängija ja bot; potile ja tõenäosusele ei tohi mõju avaldada.');
+    else if(involvesBot)sums.botOnlyActiveLotteryPot+=Math.max(0,num(L.pot));
+  }
+  checkLottery(state.settings?.lottery,'legacy');
+  for(const L of state.lotteries||[])checkLottery(L,'multi:'+str(L.id));
+  for(const [brand,a] of entries(state.autoWorld?.auctions)){
+    const bids=a.bids||[],botBids=bids.filter(x=>bot(x.userId)),humanBids=bids.filter(x=>human(x.userId));
+    for(const bid of botBids)sums.botBidReservations+=Math.max(0,num(bid.amount));
+    if(botBids.length && (humanBids.length || (human(a.holder)&&num(a.until)>now)))
+      add('mixed_dealer_auction',brand,'Oksjonil on botide ja päris mängijate pakkumised või aktiivne inimleping.');
+  }
+  for(const t of state.autoWorld?.militaryTenders||[]){
+    const bids=t.bids||[],botBids=bids.filter(x=>bot(x.userId));
+    for(const bid of botBids)sums.botBidReservations+=Math.max(0,num(bid.amount));
+    if(t.status==='open'&&botBids.length&&bids.some(x=>human(x.userId)))
+      add('mixed_military_tender',t.id,'Päris mängijad ja botid võistlevad samas sõjaväehankes.');
+  }
+  for(const [k,o] of entries(state.turnOrders)){
+    if(bot(o?.userId)||bot(o?.buyerId)||bot(o?.sellerId)){
+      if(!['cancelled','completed','rejected','expired','failed'].includes(str(o.status)))
+        add('pending_turn_order',k,'Boti käigutehing ei ole lõplikult lõpetatud.');
+    }
+  }
+  return {
+    readOnly:true, approved:blocks.length===0,
+    testWipeApproved:blocks.every(b=>!HARD_BLOCKERS.has(b.kind)),
+    testWipeDiscards:blocks.filter(b=>!HARD_BLOCKERS.has(b.kind)),
+    botCount:botEntries.length,
+    botIds:[...ids].sort(),botNames:names.sort(),blockerCount:blocks.length,blockers:blocks,
+    financialExposure:sums,
+    note:'Ainult npc===true mängijakontod. Autoäri süsteemsed NPC-ostjad ei kuulu puhastusse. Ajaloolised auditilogid ja snapshotid jäävad alles.'
+  };
+}
+
+function applyBotCleanup(state,{expectedBotIds,now=Date.now(),mode='safe',confirmation}={}){
+  if(!Array.isArray(expectedBotIds))throw Error('Turvakontroll: eelkontrolli bot-ID-de loend on kohustuslik.');
+  const plan=planBotCleanup(state,now);
+  const testWipe=mode==='discard-test-obligations';
+  if(mode!=='safe'&&!testWipe)throw Error('Tundmatu puhastusrežiim.');
+  if(testWipe && confirmation!==TEST_WIPE_CONFIRMATION) {
+    const err=Error('Testi kohustuste kustutamine nõuab eraldi kinnitust.');
+    err.code='BOT_TEST_WIPE_CONFIRM_REQUIRED';throw err;
+  }
+  if (testWipe ? !plan.testWipeApproved : !plan.approved) {
+    const blockers=testWipe?plan.blockers.filter(b=>HARD_BLOCKERS.has(b.kind)):plan.blockers;
+    const err=Error('Bottide eemaldamine peatatud: '+blockers.length+' kaitseblokeeringut.');
+    err.code='BOT_CLEANUP_BLOCKED';err.blockers=blockers;throw err;
+  }
+  const actual=plan.botIds.join('|'),expected=unique(expectedBotIds.map(str)).sort().join('|');
+  if (actual!==expected) throw Error('Bottide ID-loend muutus pärast eelkontrolli. Peata tegevus.');
+  // All operations are performed on a detached copy. The caller gets a new object;
+  // no persistent state is changed by this function.
+  const out=clone(state),botIds=new Set(plan.botIds),bot=id=>id!=null&&botIds.has(str(id));
+  const removeObj=(obj,pred)=>{let n=0;for(const [k,v] of entries(obj)){if(pred(v,k)){delete obj[k];n++}}return n};
+  const result={accounts:0,botBanks:0,playerLoans:0,centralLoans:0,centralRequests:0,carListings:0,
+    bounties:0,bodyguardOffers:0,lotteries:0,auctionBids:0,tenderBids:0,gangs:0,gangMemberships:0,
+    messages:0,chat:0,notifications:0,resetRequests:0,resetTokens:0,turnOrders:0};
+  result.botBanks=removeObj(out.playerBanks,(b,k)=>bot(k)||bot(b?.owner));
+  result.playerLoans=removeObj(out.loans,l=>bot(l?.borrower)||bot(l?.bankOwner));
+  result.centralLoans=removeObj(out.gameBank?.loans,l=>bot(l?.userId));
+  result.centralRequests=removeObj(out.gameBank?.loanRequests,l=>bot(l?.userId));
+  result.carListings=removeObj(out.carListings,l=>bot(l?.seller));
+  result.bounties=removeObj(out.bounties,b=>bot(b?.posterId)||bot(b?.targetId));
+  result.bodyguardOffers=removeObj(out.bodyguardOffers,o=>bot(o?.clientId)||bot(o?.guardId));
+  result.turnOrders=removeObj(out.turnOrders,o=>bot(o?.userId)||bot(o?.buyerId)||bot(o?.sellerId));
+  result.resetRequests=removeObj(out.resetRequests,(r,k)=>bot(k)||bot(r?.userId));
+  result.resetTokens=removeObj(out.passwordResetTokens,r=>bot(r?.userId));
+  const removeBotLottery=L=>{
+    if (!L)return false;
+    const tickets=Object.keys(L.tickets||{});
+    return bot(L.organizerId) || tickets.some(bot);
+  };
+  // Completed lottery results are historical records; active bot-only lotteries
+  // are removed. Active mixed lotteries are blocked by the plan.
+  if(out.settings?.lottery?.active && removeBotLottery(out.settings.lottery)){
+    out.settings.lottery={...out.settings.lottery,active:false,tickets:{},organizerId:null,organizerName:'',pot:0,bankShare:0};result.lotteries++;
+  }
+  if(Array.isArray(out.lotteries))out.lotteries=out.lotteries.filter(L=>{
+    if(!L.active||!removeBotLottery(L))return true;
+    result.lotteries++;return false;
+  });
+  for(const [brand,a] of entries(out.autoWorld?.auctions)){
+    const old=a.bids||[];a.bids=old.filter(b=>!bot(b.userId));result.auctionBids+=old.length-a.bids.length;
+    if(bot(a.holder)){a.holder='';a.until=0;a.end=now+8*3600000;a.lastResult=null;}
+  }
+  for(const tender of out.autoWorld?.militaryTenders||[]){
+    const old=tender.bids||[];tender.bids=old.filter(b=>!bot(b.userId));result.tenderBids+=old.length-tender.bids.length;
+  }
+  for(const [id,g] of entries(out.gangs)){
+    if(bot(g.leader)){
+      for(const u of Object.values(out.users||{}))if(u.gangId===id)u.gangId=null;
+      delete out.gangs[id];result.gangs++;continue;
+    }
+    const old=g.members||[];g.members=old.filter(id=>!bot(id));result.gangMemberships+=old.length-g.members.length;
+    g.assistants=(g.assistants||[]).filter(id=>!bot(id));
+    for(const field of ['donations','attackStats','attackWins','attackLosses'])for(const id of botIds)if(g[field])delete g[field][id];
+    for(const day of g.attackHistory||[])for(const field of ['attacks','wins','losses'])for(const id of botIds)if(day[field])delete day[field][id];
+    // Don't rewrite historic gang financial log, forum, or completed rewards.
+  }
+  for(const u of Object.values(out.users||{}))if(!u.npc){
+    if(bot(u.bodyguard)){u.bodyguard=null;u.bodyguardUntil=0;}
+    if(bot(u.guardingClient)){u.guardingClient=null;u.guardingUntil=0;}
+    for(const id of botIds){
+      if(u.pvpHits)delete u.pvpHits[id];
+      if(u.lastSpyAt)delete u.lastSpyAt[id];
+    }
+  }
+  if(Array.isArray(out.chat)){const old=out.chat.length;out.chat=out.chat.filter(m=>!bot(m.userId));result.chat=old-out.chat.length;}
+  if(Array.isArray(out.messages)){const old=out.messages.length;out.messages=out.messages.filter(m=>!bot(m.fromId)&&!bot(m.toId));result.messages=old-out.messages.length;}
+  if(Array.isArray(out.notifications)){const old=out.notifications.length;out.notifications=out.notifications.filter(n=>!bot(n.userId)&&!bot(n.data?.clientId)&&!bot(n.data?.targetUserId));result.notifications=old-out.notifications.length;}
+  result.accounts=removeObj(out.users,u=>u?.npc===true);
+  // Keep historical transaction logs and encrypted snapshots for rollback;
+  // do not alter db.meta, db.gameBank.balance or non-bot user balances.
+  const post=planBotCleanup(out,now);
+  if(post.botCount!==0)throw Error('Pärast puhastust on endiselt boti mängijakontosid.');
+  for(const [k,l] of entries(out.loans))if(bot(l.borrower)||bot(l.bankOwner))throw Error('Boti laen jäi alles: '+k);
+  for(const [k,l] of entries(out.gameBank?.loans))if(bot(l.userId))throw Error('Boti keskpangalaen jäi alles: '+k);
+  return {state:out,report:{...result,sourceBotIds:plan.botIds,financialExposure:plan.financialExposure,
+    policy:mode,discardedTestRelationships:testWipe?plan.testWipeDiscards:[],
+    discardedTestRelationshipCount:testWipe?plan.testWipeDiscards.length:0,
+    warning:testWipe
+      ? 'TESTANDMETE KUSTUTAMINE: boti ja inimese ühised aktiivsed laenud, loosid, oksjonipakkumised ning muud seosed kustutati ilma tagasimakseteta. Päris mängija nõuded võivad kaduda. Väljund on ainult mälus; päris PostgreSQL-i taastamist ei ole testitud.'
+      : 'Väljund on ainult mälus. Päris PostgreSQL-i salvestust/taastamist pole kontrollitud. Snapshotid ja ajaloolised logid jäeti tõendusena alles.'}};
+}
+module.exports={planBotCleanup,applyBotCleanup,TEST_WIPE_CONFIRMATION};
+
+  return module.exports;
+})();
+const __v8SeasonReset = (() => {
+  const module = { exports: {} };
+'use strict';
+/**
+ * VARJURIIK 8.0 — full test-season reset STATE TRANSFORMER.
+ * PURE / COPY-ON-WRITE, not installed on the running server.
+ * All gameplay state, obligations, bot PLAYER accounts, and active activities
+ * are discarded as authorized for the test-season reset. NPC car-market stock
+ * (autoWorld.used) survives.  Historical snapshots/audits survive for recovery.
+ *
+ * NO persistence and NO release authorization in this file. The live server's
+ * normal writers are NOT transactionally coordinated, so do not wire this to
+ * a live route until a protected exclusive write/commit/restore path exists.
+ */
+const crypto=require('node:crypto');
+const zlib=require('node:zlib');
+const {planBotCleanup}=__v8BotCleanup;
+const entries=o=>o&&typeof o==='object'&&!Array.isArray(o)?Object.entries(o):[];
+const clone=o=>JSON.parse(JSON.stringify(o));
+const deepEqual=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+const digest=o=>crypto.createHash('sha256').update(JSON.stringify(o)).digest('hex');
+const START_MONEY=2_500_000;
+const IDENTITY=['id','name','email','salt','hash','role','banned','privacy','createdAt','lastIp','lastUserAgent','lastLoginAt','sessionVersion'];
+const GLOBAL_CLEARED=['gangs','playerBanks','loans','carListings','bounties','bodyguardOffers','resetRequests','passwordResetTokens','turnShop','turnOrders'];
+const SEASON_ARRAY_CLEARED=['chat','messages','notifications','casinoHistory','gifts'];
+const EXPECTED_TOP_LEVEL=new Set(['meta','users','settings','chat','gangs','playerBanks','loans','carListings','messages','notifications','gameBank','casinoHistory','logs','securityLogs','auditLogs','resetRequests','passwordResetTokens','bounties','bodyguardOffers','turnShop','turnOrders','snapshots','gifts','nextIds','autoWorld','lotteries']);
+const LEGACY_LOTTERY={active:false,title:'',ticketPrice:10000,maxTickets:20,pot:0,bankShare:0,organizerId:null,organizerName:'',drawAt:0,tickets:{},winner:null};
+function err(code,message){const e=Error(message);e.code=code;return e;}
+function reportBefore(state){
+ const users=Object.values(state.users||{});
+ const bots=users.filter(u=>u?.npc===true);
+ const humans=users.filter(u=>u?.npc!==true);
+ const count=obj=>Object.keys(obj||{}).length;
+ const activeLotteries=(state.lotteries||[]).filter(l=>l.active).length+Number(!!state.settings?.lottery?.active);
+ const bids=Object.values(state.autoWorld?.auctions||{}).reduce((sum,a)=>sum+(a?.bids?.length||0),0)+(state.autoWorld?.militaryTenders||[]).reduce((sum,t)=>sum+(t?.bids?.length||0),0);
+ const sumField=(list,fn)=>list.reduce((sum,item)=>sum+Math.max(0,Number(fn(item))||0),0);
+ return {humans:humans.length,bots:bots.length,banks:count(state.playerBanks),playerLoans:count(state.loans),centralLoans:count(state.gameBank?.loans),centralRequests:count(state.gameBank?.loanRequests),carListings:count(state.carListings),gangs:count(state.gangs),bounties:count(state.bounties),bodyguardOffers:count(state.bodyguardOffers),activeLotteries,auctionBids:bids,
+  playerCashEUR:sumField(humans,u=>u.cash),playerBankEUR:sumField(humans,u=>u.bank),autoBusinessEUR:sumField(humans,u=>u.autoTrade?.balance),nightlifeEUR:sumField(humans,u=>(u.nightlife?.venues||[]).reduce((a,v)=>a+(Number(v.account)||0),0))};
+}
+function preflightSeasonReset(state){
+ if(!state||!state.users||typeof state.users!=='object'||Array.isArray(state.users))throw err('INVALID_STATE','Kasutajate andmed puuduvad.');
+ const issues=[];const seen=new Set(),users=Object.values(state.users),owners=[];
+ for(const [k,u] of entries(state.users)){
+  if(!u||typeof u!=='object'||!u.id||!u.name||!u.salt||!u.hash){issues.push('Vigane kasutaja või puuduvad sisselogimisandmed: '+k);continue}
+  if(seen.has(String(u.id)))issues.push('Korduv kasutaja ID: '+u.id);
+  seen.add(String(u.id));
+  if(u.role==='owner')owners.push(u);
+  if(u.npc===true && (u.role==='owner'||u.role==='admin'))issues.push('Eelistatud konto märgitud botiks: '+u.name);
+ }
+ if(owners.length!==1)issues.push('Owner-kontosid peab olema täpselt üks, leiti '+owners.length);
+ const unknownGlobals=Object.keys(state).filter(k=>!EXPECTED_TOP_LEVEL.has(k));
+ if(unknownGlobals.length)issues.push('Tundmatud globaalsed mänguväljad: '+unknownGlobals.join(', '));
+ const botPlan=planBotCleanup(state);
+ if(!botPlan.testWipeApproved)issues.push('Botikontode identiteedi konflikt: '+botPlan.blockers.filter(x=>['bad_bot_id','privileged_bot','duplicate_id'].includes(x.kind)).map(x=>x.kind).join(', '));
+ return {safe:issues.length===0,issues,accounts:users.map(u=>String(u?.id||'')).sort(),botIds:botPlan.botIds,sourceDigest:digest(state),affected:reportBefore(state),isTestSeasonData:true};
+}
+function freshUser(old,now){
+ const u={};
+ for(const field of IDENTITY)if(Object.prototype.hasOwnProperty.call(old,field))u[field]=clone(old[field]);
+ // invalidate all current login tokens, but keep user credentials and role.
+ u.sessionVersion=(Number.isSafeInteger(old.sessionVersion)?old.sessionVersion:1)+1;
+ u.failedLogins=0;u.lockedUntil=0;u.vip=false;u.vipUntil=0;
+ Object.assign(u,{
+  cash:START_MONEY,bank:0,turns:300,hp:100,level:1,xp:0,rep:0,wanted:0,jailedUntil:0,
+  education:0,educationProgress:0,securityLevel:1,mafiaLevel:1,propertyLevel:0,mafia:0,guards:0,
+  weapons:{},crypto:0,city:'Paide',businesses:{},businessProjects:{},businessRejected:{},businessWorkers:{},
+  carLicense:0,cars:[],gangId:null,spies:{finnish:0,ukrainian:0,russian:0},intelLevel:0,
+  lastSpyAt:{},spyWindow:[],bodyguard:null,bodyguardUntil:0,guardingClient:null,guardingUntil:0,
+  jobId:null,lastSalaryAt:now,lastTurnAt:now,lastActive:now,
+  nightlife:{venues:[],nextVenueId:1},stats:{wins:0,losses:0,robbed:0,pokerWins:0,crimes:0,operations:0},
+  production:{capacityLevel:1,speedLevel:1,materials:{plant:0,chem:0,pack:0},stock:0,nextAt:0,totalMade:0,totalSold:0},
+  pvpHits:{},maintenanceDue:now+86400000,maintenanceDebt:0,maintenanceLastBill:null
+ });
+ // IMPORTANT: omit autoTrade. New season auto business requires a 5M cash + 200 turn opening;
+ // only successful first opening grants the one-time 5M auto-business starter balance.
+ // Unrecognized older gameplay properties are likewise discarded rather than
+ // silently carrying funds/progress into a new season.
+ return u;
+}
+function verifySeasonReset(out,source,now){
+ const checks=[];
+ for(const fld of GLOBAL_CLEARED)if(Object.keys(out[fld]||{}).length)checks.push(fld);
+ for(const fld of SEASON_ARRAY_CLEARED)if((out[fld]||[]).length)checks.push(fld);
+ if((out.lotteries||[]).length||out.settings?.lottery?.active||Object.keys(out.settings?.lottery?.tickets||{}).length)checks.push('lotteries');
+ if(Object.keys(out.gameBank?.loans||{}).length||Object.keys(out.gameBank?.loanRequests||{}).length)checks.push('gameBank.loans');
+ for(const fld of ['balance','turnsBalance','autoMoneyFund','autoTurnsFund'])if(Number(out.gameBank?.[fld]||0)!==0)checks.push('gameBank.'+fld);
+ if((out.gameBank?.log||[]).length)checks.push('gameBank.log');
+ if(Object.keys(out.autoWorld?.auctions||{}).length || (out.autoWorld?.militaryTenders||[]).length)checks.push('autoWorld.marketContracts');
+ if(!deepEqual(out.autoWorld?.used||[],source.autoWorld?.used||[]))checks.push('NPC auto inventory changed');
+ if(Object.values(out.users||{}).some(u=>u.npc===true))checks.push('bot players');
+ // A new pre-reset snapshot is added, older snapshots preserved within the
+ // game's rolling 12-snapshot limit. Check the backup actually reproduces
+ // the old database (excluding the snapshot array to avoid recursion).
+ try {
+  const backups=out.snapshots||[];
+  const original=clone({...source,snapshots:[]});
+  const extracted=JSON.parse(zlib.gunzipSync(Buffer.from(backups[0].dataGzip,'base64')).toString('utf8'));
+  if(!deepEqual(extracted,original))checks.push('backup does not match original state');
+  const kept=(source.snapshots||[]).slice(0,11);
+  if(!deepEqual(backups.slice(1),kept))checks.push('old snapshots changed');
+ }catch(e){checks.push('backup invalid: '+e.message)}
+ if(!deepEqual(out.auditLogs||[],source.auditLogs||[]))checks.push('auditLogs changed');
+ if(!deepEqual(out.securityLogs||[],source.securityLogs||[]))checks.push('securityLogs changed');
+ const originals=Object.values(source.users||{}).filter(u=>u.npc!==true),after=Object.values(out.users||{});
+ if(after.length!==originals.length)checks.push('human count changed');
+ for(const orig of originals){
+  const n=after.find(u=>u.id===orig.id);
+  if(!n){checks.push('missing human '+orig.id);continue}
+  for(const k of ['id','name','email','hash','salt','role','createdAt'])if(n[k]!==orig[k])checks.push('identity changed '+orig.id+':'+k);
+  if(n.cash!==START_MONEY||n.bank!==0||n.autoTrade!==undefined||n.maintenanceDebt!==0||n.gangId!==null||n.bodyguard!==null||n.guardingClient!==null||(n.nightlife?.venues||[]).length||Object.keys(n.businessProjects||{}).length)checks.push('remaining progress '+orig.id);
+ }
+ if(checks.length)throw err('SEASON_RESET_INVARIANT','Hooajareseti kontroll ebaõnnestus: '+checks.join(', '));
+ return true;
+}
+function buildSeasonReset(state,{expectedSourceDigest,resetId,now=Date.now()}={}){
+ if(!resetId||!/^[-a-zA-Z0-9_]{8,100}$/.test(resetId))throw err('RESET_ID_REQUIRED','Reseti unikaalne tunnus on nõutud.');
+ if(!Number.isSafeInteger(now)||now<=0)throw err('INVALID_TIME','Vigane ajamärge.');
+ if(state?.meta?.lastSeasonReset?.resetId===resetId){
+  return {state:clone(state),report:{alreadyApplied:true,resetId,reason:'Sama hooajareset on juba salvestatud.'}};
+ }
+ const plan=preflightSeasonReset(state);
+ if(!plan.safe)throw err('SEASON_RESET_BLOCKED',plan.issues.join('; '));
+ if(expectedSourceDigest!==plan.sourceDigest)throw err('SEASON_RESET_STALE','Mängu seis on pärast eelkontrolli muutunud. Koosta uus eelkontroll.');
+ const out=clone(state),fresh={};
+ for(const [key,u] of entries(out.users))if(u.npc!==true)fresh[key]=freshUser(u,now);
+ out.users=fresh;
+ for(const field of GLOBAL_CLEARED)out[field]={};
+ for(const field of SEASON_ARRAY_CLEARED)out[field]=[];
+ out.lotteries=[];
+ out.settings={...(out.settings||{}),lottery:clone(LEGACY_LOTTERY),marketPressure:0};
+ out.gameBank={...(out.gameBank||{}),balance:0,turnsBalance:0,autoMoneyFund:0,autoTurnsFund:0,loanRequests:{},loans:{},log:[],autoLoan:{...(out.gameBank?.autoLoan||{}),enabled:false}};
+ out.autoWorld={...(out.autoWorld||{}),used:clone(state.autoWorld?.used||[]),auctions:{},militaryTenders:[],militaryTenderHistory:[],history:[],npcNext:0,nextRefresh:0};
+ // Snapshot is generated FROM source before resetting; this is a complete
+ // rollback point, not only a summary. It is compressed like the existing game
+ // snapshots and never recursively embeds other snapshots.
+ const maxExistingId=(state.snapshots||[]).reduce((m,s)=>Math.max(m,Number.isSafeInteger(Number(s.id))?Number(s.id):0),0);
+ const nextSnapshotId=Math.max(1,Math.floor(Number(out.nextIds?.snapshot)||1),maxExistingId+1);
+ out.nextIds={...(out.nextIds||{}),snapshot:nextSnapshotId+1};
+ const originalUnnested=JSON.stringify({...state,snapshots:[]});
+ const backup={id:String(nextSnapshotId),time:now,label:'Enne hooajaresetti '+resetId,
+   actor:'system:season-reset',dataGzip:zlib.gzipSync(Buffer.from(originalUnnested),{level:3}).toString('base64')};
+ out.snapshots=[backup,...(state.snapshots||[])].slice(0,12);
+ out.meta={...(out.meta||{}),lotteriesMigratedV8:true,lastSeasonReset:{resetId,at:now,humans:plan.affected.humans,botsRemoved:plan.affected.bots,backupSnapshotId:backup.id}};
+ verifySeasonReset(out,state,now);
+ return {state:out,report:{resetId,alreadyApplied:false,at:now,usersReset:plan.affected.humans,botAccountsRemoved:plan.affected.bots,backupSnapshotId:backup.id,discarded:plan.affected,
+  ownerAccountKept:true,ownerProgressReset:true,notPersisted:true,
+  safeguards:'Konto autentimine ja rollid säilivad, bot-mängijad ja aktiivsed kohustused kaovad, autokeskuse NPC müügiturg säilib, varukoopiad ja auditilogid säilivad.'}};
+}
+module.exports={preflightSeasonReset,buildSeasonReset,verifySeasonReset,START_MONEY};
+
+  return module.exports;
+})();
+
+
 const PORT=Number(process.env.PORT||3000);
 const OWNER_USERNAME=process.env.OWNER_USERNAME||'Erki';
 const OWNER_PASSWORD=process.env.OWNER_PASSWORD||'';
@@ -77,8 +436,17 @@ const WEAPONS=[
 {name:'Täpsuspüss',price:62000,atk:380,def:110,score:480},
 {name:'Raskekuulipilduja',price:76000,atk:560,def:430,score:700},
 {name:'Sõjaväe arsenal',price:88000,atk:850,def:720,score:1000}];
+// Röövide avamine sõltub nüüd EDUKATE varasemate röövide arvust, mitte üldlevelist.
+// Progresioon on testimiseks valitud: 0 / 10 / 50 / 150 / 400 / 900 / 2000.
+// Ühelgi röövil pole sõltuvalt tasemest erinevat käigukulu: alati 50.
 const CRIMES=[
-{id:'shop',name:'Väikepood',turns:30,min:9000,max:30000,risk:.08,need:1},{id:'car',name:'Autovargus',turns:30,min:50000,max:180000,risk:.14,need:3},{id:'warehouse',name:'Ladu',turns:30,min:250000,max:900000,risk:.22,need:8},{id:'bank',name:'Pangarööv',turns:30,min:2200000,max:9000000,risk:.32,need:18},{id:'casino',name:'Kasiino',turns:30,min:16000000,max:35000000,risk:.42,need:35},{id:'armored',name:'Soomusauto',turns:30,min:45000000,max:77000000,risk:.50,need:60},{id:'state',name:'Riiklik varakamber',turns:30,min:98000000,max:155000000,risk:.58,need:100}];
+{id:'shop',name:'Väikepood',turns:50,min:9000,max:30000,risk:.08,needRobberies:0},
+{id:'car',name:'Autovargus',turns:50,min:50000,max:180000,risk:.14,needRobberies:10},
+{id:'warehouse',name:'Ladu',turns:50,min:250000,max:900000,risk:.22,needRobberies:50},
+{id:'bank',name:'Pangarööv',turns:50,min:2200000,max:9000000,risk:.32,needRobberies:150},
+{id:'casino',name:'Kasiino',turns:50,min:16000000,max:35000000,risk:.42,needRobberies:400},
+{id:'armored',name:'Soomusauto',turns:50,min:45000000,max:77000000,risk:.50,needRobberies:900},
+{id:'state',name:'Riiklik varakamber',turns:50,min:98000000,max:155000000,risk:.58,needRobberies:2000}];
 
 
 
@@ -207,7 +575,7 @@ function ensureGangDay(g){if(!g)return;const today=estoniaDateKey();g.attackDail
 function recordGangAttack(g,u,won){ensureGangDay(g);g.attackStats[u.id]=(g.attackStats[u.id]||0)+1;if(won)g.attackWins[u.id]=(g.attackWins[u.id]||0)+1;else g.attackLosses[u.id]=(g.attackLosses[u.id]||0)+1}
 
 
-function defaults(){return{meta:{schemaVersion:SAVE_SCHEMA_VERSION},users:{},settings:{heistMultiplier:1,turnBatch:50,turnMinutes:15,maxNaturalTurns:3000,pvpWindowMin:15,pvpMaxHits:6,cryptoMin:125,cryptoMax:190,cryptoPrice:155,cryptoNext:Date.now()+900000,marketFee:.03,carSaleFee:.08,maintenanceRate:.002,announcement:'',weaponMarket:1,carMarket:1,economyMarket:1,travelBase:105000,bountyFee:.25,businessTax:.08,loanLateFeeDaily:.01,loanLateFeeCap:.50,bodyguardDefensePct:.20,bodyguardGameFee:.50,workerBasePrice:25000,spyPrices:{finnish:500000,ukrainian:1500000,russian:4000000},gangWeaponPrice:25000000,gangWeaponPower:300,gangWeaponScore:320,businessProjectOverrides:{},weaponPriceOverrides:{},marketNext:Date.now()+900000,marketPressure:0,insuranceTiers:{basic:{basePrice:1000000,coverage:.12,deductible:.08},standard:{basePrice:3000000,coverage:.25,deductible:.06},premium:{basePrice:7500000,coverage:.4,deductible:.04},elite:{basePrice:15000000,coverage:.55,deductible:.03}},lottery:{active:false,title:'',ticketPrice:10000,maxTickets:20,pot:0,bankShare:0,organizerId:null,organizerName:'',drawAt:0,tickets:{},winner:null}},chat:[],gangs:{},playerBanks:{},loans:{},carListings:{},messages:[],notifications:[],gameBank:{balance:0,turnsBalance:0,autoMoneyFund:0,autoTurnsFund:0,autoLoan:{enabled:false,rate:20,hours:12,maxMoney:100000000,maxTurns:5000},loanRequests:{},loans:{},log:[]},casinoHistory:[],logs:[],securityLogs:[],auditLogs:[],resetRequests:{},passwordResetTokens:{},bounties:{},bodyguardOffers:{},turnShop:{},turnOrders:{},snapshots:[],gifts:[],nextIds:{loan:1,listing:1,bounty:1,turnPack:1,turnOrder:1,snapshot:1,gift:1,message:1,notification:1,bodyguardOffer:1,gameBankRequest:1,gameBankLoan:1}}}
+function defaults(){return{meta:{schemaVersion:SAVE_SCHEMA_VERSION},users:{},settings:{heistMultiplier:1,turnBatch:50,turnMinutes:15,maxNaturalTurns:3000,pvpWindowMin:15,pvpMaxHits:6,cryptoMin:125,cryptoMax:190,cryptoPrice:155,cryptoNext:Date.now()+900000,marketFee:.03,carSaleFee:.08,maintenanceRate:.002,announcement:'',weaponMarket:1,carMarket:1,economyMarket:1,travelBase:105000,bountyFee:.25,businessTax:.08,loanLateFeeDaily:.01,loanLateFeeCap:.50,bodyguardDefensePct:.20,bodyguardGameFee:.50,workerBasePrice:25000,spyPrices:{finnish:500000,ukrainian:1500000,russian:4000000},gangWeaponPrice:25000000,gangWeaponPower:300,gangWeaponScore:320,businessProjectOverrides:{},weaponPriceOverrides:{},marketNext:Date.now()+900000,marketPressure:0,lottery:{active:false,title:'',ticketPrice:10000,maxTickets:20,pot:0,bankShare:0,organizerId:null,organizerName:'',drawAt:0,tickets:{},winner:null}},chat:[],gangs:{},playerBanks:{},loans:{},carListings:{},messages:[],notifications:[],gameBank:{balance:0,turnsBalance:0,autoMoneyFund:0,autoTurnsFund:0,autoLoan:{enabled:false,rate:20,hours:12,maxMoney:100000000,maxTurns:5000},loanRequests:{},loans:{},log:[]},casinoHistory:[],logs:[],securityLogs:[],auditLogs:[],resetRequests:{},passwordResetTokens:{},bounties:{},bodyguardOffers:{},turnShop:{},turnOrders:{},snapshots:[],gifts:[],nextIds:{loan:1,listing:1,bounty:1,turnPack:1,turnOrder:1,snapshot:1,gift:1,message:1,notification:1,bodyguardOffer:1,gameBankRequest:1,gameBankLoan:1}}}
 let db=defaults(),pool=null,saveTimer=null;
 function isPlainObject(v){return !!v&&typeof v==='object'&&!Array.isArray(v)}
 function cloneData(v){return v===undefined?undefined:JSON.parse(JSON.stringify(v))}
@@ -222,7 +590,7 @@ function addMissing(existing,defaultsObj){
   }
   return out;
 }
-function userMigrationDefaults(){const now=Date.now();return{email:'',education:0,educationProgress:0,securityLevel:1,mafiaLevel:1,propertyLevel:0,mafia:0,guards:0,weapons:{},crypto:0,city:'Paide',businesses:{},carLicense:0,cars:[],gangId:null,pvpHits:{},maintenanceDue:now+86400000,maintenanceDebt:0,maintenanceLastBill:null,sessionVersion:1,lastIp:'',lastUserAgent:'',lastLoginAt:0,failedLogins:0,lockedUntil:0,wanted:0,jailedUntil:0,rep:0,insurance:{active:false,until:0,coverage:.3},privacy:{cash:true,bank:false,levels:true,stats:true,lastActive:false},spies:{finnish:0,ukrainian:0,russian:0},intelLevel:0,lastSpyAt:{},bodyguard:null,bodyguardUntil:0,guardingClient:null,guardingUntil:0,businessProjects:{},businessWorkers:{},businessRejected:{},lastActive:now,vipUntil:0,createdAt:now,jobId:null,lastSalaryAt:now,lastTurnAt:now,stats:{wins:0,losses:0,robbed:0,pokerWins:0,crimes:0,operations:0},production:{capacityLevel:1,speedLevel:1,materials:{plant:0,chem:0,pack:0},stock:0,nextAt:0,totalMade:0,totalSold:0},nightlife:{venues:[],nextVenueId:1}}}
+function userMigrationDefaults(){const now=Date.now();return{email:'',education:0,educationProgress:0,securityLevel:1,mafiaLevel:1,propertyLevel:0,mafia:0,guards:0,weapons:{},crypto:0,city:'Paide',businesses:{},carLicense:0,cars:[],gangId:null,pvpHits:{},maintenanceDue:now+86400000,maintenanceDebt:0,maintenanceLastBill:null,sessionVersion:1,lastIp:'',lastUserAgent:'',lastLoginAt:0,failedLogins:0,lockedUntil:0,wanted:0,jailedUntil:0,rep:0,privacy:{cash:true,bank:false,levels:true,stats:true,lastActive:false},spies:{finnish:0,ukrainian:0,russian:0},intelLevel:0,lastSpyAt:{},bodyguard:null,bodyguardUntil:0,guardingClient:null,guardingUntil:0,businessProjects:{},businessWorkers:{},businessRejected:{},lastActive:now,vipUntil:0,createdAt:now,jobId:null,lastSalaryAt:now,lastTurnAt:now,stats:{wins:0,losses:0,robbed:0,pokerWins:0,crimes:0,operations:0},production:{capacityLevel:1,speedLevel:1,materials:{plant:0,chem:0,pack:0},stock:0,nextAt:0,totalMade:0,totalSold:0},nightlife:{venues:[],nextVenueId:1}}}
 function normalize(){
   const d=defaults();
   for(const k of Object.keys(d))if(db[k]===undefined)db[k]=cloneData(d[k]);
@@ -261,8 +629,6 @@ function normalize(){
   db.settings.lottery={...d.settings.lottery,...(db.settings.lottery||{})};if(!Number.isFinite(Number(db.settings.lottery.pot)))db.settings.lottery.pot=0;if(!Number.isFinite(Number(db.settings.lottery.bankShare)))db.settings.lottery.bankShare=0;if(db.settings.lottery.prize!=null)delete db.settings.lottery.prize;
   if(!Array.isArray(db.casinoHistory))db.casinoHistory=[];
   if(db.settings.carSaleFee==null)db.settings.carSaleFee=.08;
-  db.settings.insuranceTiers={...d.settings.insuranceTiers,...(db.settings.insuranceTiers||{})};
-  for(const[k,t]of Object.entries(db.settings.insuranceTiers)){const def=d.settings.insuranceTiers[k]||{};if(t.basePrice==null){t.basePrice=def.basePrice||Math.max(100000,Math.floor((t.priceRate||.01)*100000000));delete t.priceRate}}
   db.settings.weaponPriceOverrides={...(d.settings.weaponPriceOverrides||{}),...(db.settings.weaponPriceOverrides||{})};
   if(!db.meta.weaponPriceFixV65){db.settings.weaponPriceOverrides={};db.settings.weaponMarket=1;db.meta.weaponPriceFixV65=true;}
   db.settings.spyPrices={...(d.settings.spyPrices||{}),...(db.settings.spyPrices||{})};
@@ -295,12 +661,17 @@ function normalize(){
   if(db.settings.cryptoMin===120&&db.settings.cryptoMax===190){db.settings.cryptoMin=125;db.settings.cryptoPrice=clamp(db.settings.cryptoPrice,125,190)}
   for(const[gId,g]of Object.entries(db.gangs||{})){g.members=[...new Set((g.members||[]).filter(id=>{const u=byId(id);return !!u&&u.gangId===gId}))];g.assistants=[...new Set((g.assistants||[]).filter(id=>g.members.includes(id)&&id!==g.leader))];const leader=byId(g.leader);if(leader){if(leader.gangId&&leader.gangId!==gId){delete db.gangs[gId];continue}leader.gangId=gId;if(!g.members.includes(g.leader))g.members.unshift(g.leader)}else delete db.gangs[gId]}
 }
-async function initStorage(){if(DATABASE_URL){pool=new Pool({connectionString:DATABASE_URL,ssl:DATABASE_URL.includes('localhost')?false:{rejectUnauthorized:false}});await pool.query('CREATE TABLE IF NOT EXISTS game_state(id INT PRIMARY KEY,data JSONB NOT NULL,updated_at TIMESTAMPTZ DEFAULT NOW())');const r=await pool.query('SELECT data FROM game_state WHERE id=1');if(r.rows[0])db=r.rows[0].data;else await pool.query('INSERT INTO game_state(id,data) VALUES(1,$1)',[db]);console.log('PostgreSQL persistence ON')}else{if(fs.existsSync(DB_FILE)){try{db=JSON.parse(fs.readFileSync(DB_FILE,'utf8'))}catch(e){console.error('db.json read failed:',e.message)}}if(DATA_DIR==='/var/data'||process.env.DATA_DIR)console.log('Persistent file storage path:',DB_FILE);else console.warn('WARNING: DATABASE_URL/DATA_DIR missing. Render deploy may erase ./data/db.json and reset players. Configure PostgreSQL or a persistent disk.')}normalize();migrateNpcNames();ensureNpcPlayers();await saveNow()}
+async function initStorage(){if(DATABASE_URL){pool=new Pool({connectionString:DATABASE_URL,ssl:DATABASE_URL.includes('localhost')?false:{rejectUnauthorized:false}});await pool.query('CREATE TABLE IF NOT EXISTS game_state(id INT PRIMARY KEY,data JSONB NOT NULL,updated_at TIMESTAMPTZ DEFAULT NOW())');const r=await pool.query('SELECT data FROM game_state WHERE id=1');if(r.rows[0])db=r.rows[0].data;else await pool.query('INSERT INTO game_state(id,data) VALUES(1,$1)',[db]);console.log('PostgreSQL persistence ON')}else{if(fs.existsSync(DB_FILE)){try{db=JSON.parse(fs.readFileSync(DB_FILE,'utf8'))}catch(e){console.error('db.json read failed:',e.message)}}if(DATA_DIR==='/var/data'||process.env.DATA_DIR)console.log('Persistent file storage path:',DB_FILE);else console.warn('WARNING: DATABASE_URL/DATA_DIR missing. Render deploy may erase ./data/db.json and reset players. Configure PostgreSQL or a persistent disk.')}normalize();migrateNpcNames();/* v8: bot creation disabled, historical NPC accounts preserved until safe reset */await saveNow()}
 // v7.08: A single writer coalesces bursts of changes. Previously every call
 // serialized the ENTIRE database immediately, including nested full backups,
 // and queued an unbounded number of JSON strings while PostgreSQL was slow.
+// v8 audit stage 9: durable revision acknowledgments for explicit saveNow callers.
+// This is NOT a full game-wide transaction engine. Ordinary ok() still uses saveSoon().
 let savePending=false;
 let saveRunner=null;
+let requestedSaveRevision=0;
+let completedSaveRevision=0;
+let saveWaiters=[];
 async function writeGameState(snapshot){
   if(pool){
     await pool.query('INSERT INTO game_state(id,data,updated_at) VALUES(1,$1,NOW()) ON CONFLICT(id) DO UPDATE SET data=$1,updated_at=NOW()',[snapshot]);
@@ -309,33 +680,60 @@ async function writeGameState(snapshot){
     await fs.promises.rename(DB_FILE+'.tmp',DB_FILE);
   }
 }
-function saveNow(){
-  savePending=true;
-  if(saveRunner)return saveRunner;
-  saveRunner=(async()=>{
-    // Combine writes from the same event-loop turn into one snapshot.
+function settleSaveWaiters(error){
+  const retained=[];
+  for(const waiter of saveWaiters){
+    if(error)waiter.reject(error);
+    else if(waiter.revision<=completedSaveRevision)waiter.resolve();
+    else retained.push(waiter);
+  }
+  saveWaiters=retained;
+}
+function startSaveRunner(){
+  if(saveRunner)return;
+  const run=(async()=>{
+    // Coalesce synchronous bursts, as in v7.08, without losing caller revisions.
     await new Promise(resolve=>setImmediate(resolve));
     while(savePending){
       savePending=false;
+      const revision=requestedSaveRevision;
       const snapshot=JSON.stringify(db);
-      try{await writeGameState(snapshot)}catch(err){
-        // Do not lose the fact that there are unsaved changes. Retry on the
-        // next scheduled save rather than looping forever on database failure.
+      try{await writeGameState(snapshot)}catch(error){
         savePending=true;
-        throw err;
+        throw error;
       }
+      completedSaveRevision=revision;
+      settleSaveWaiters();
     }
   })();
-  const thisRun=saveRunner;
-  thisRun.then(()=>{if(saveRunner===thisRun)saveRunner=null},err=>{
-    console.error('[PERSIST] Failed:',err.stack||err);
-    if(saveRunner===thisRun)saveRunner=null;
+  saveRunner=run;
+  run.then(()=>{
+    if(saveRunner===run)saveRunner=null;
+    if(savePending)startSaveRunner();
+  },error=>{
+    settleSaveWaiters(error);
+    console.error('[PERSIST] Failed:',error.stack||error);
+    if(saveRunner===run)saveRunner=null;
+    // Intentionally do not silently retry immediately after a failed write.
+    // savePending is retained, and the next explicit/scheduled save may retry.
   });
-  return thisRun;
+}
+function saveNow(){
+  const revision=++requestedSaveRevision;
+  savePending=true;
+  const confirmed=new Promise((resolve,reject)=>{
+    saveWaiters.push({revision,resolve,reject});
+  });
+  startSaveRunner();
+  return confirmed;
 }
 function saveSoon(){
-  clearTimeout(saveTimer);
-  saveTimer=setTimeout(()=>saveNow().catch(e=>console.error('[PERSIST]',e.stack||e)),350);
+  // Bounded latency even when activity is continuous.
+  if(saveTimer)return;
+  saveTimer=setTimeout(()=>{
+    saveTimer=null;
+    saveNow().catch(e=>console.error('[PERSIST]',e.stack||e));
+  },350);
 }
 
 const norm=x=>String(x||'').trim().replace(/\s+/g,' ').slice(0,18),key=x=>norm(x).toLowerCase(),rand=(a,b)=>Math.floor(Math.random()*(b-a+1))+a,clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
@@ -365,7 +763,7 @@ function loginLimited(req,name){const now=Date.now(),id=clientIp(req)+'|'+key(na
 function clearLoginBucket(req,name){loginBuckets.delete(clientIp(req)+'|'+key(name))}
 // Login throttling keys from one-off IPs/usernames must not grow indefinitely.
 setInterval(()=>{const cut=Date.now()-10*60000;for(const [k,times] of loginBuckets){const live=times.filter(t=>t>=cut);if(live.length)loginBuckets.set(k,live);else loginBuckets.delete(k)}},5*60000).unref();
-function newUser(name,pw,role='player',email=''){const h=hpw(pw);return{id:crypto.randomUUID(),name,email:String(email||'').trim().toLowerCase().slice(0,120),...h,role,banned:false,vip:false,vipUntil:0,cash:2500000,bank:0,turns:300,hp:100,level:1,xp:0,rep:0,wanted:0,jailedUntil:0,insurance:{active:false,until:0,coverage:.3},privacy:{cash:true,bank:false,levels:true,stats:true,lastActive:false},education:0,educationProgress:0,securityLevel:1,mafiaLevel:1,propertyLevel:0,mafia:0,guards:0,weapons:{},crypto:0,city:'Paide',businesses:{},carLicense:0,cars:[],gangId:null,spies:{finnish:0,ukrainian:0,russian:0},intelLevel:0,lastSpyAt:{},bodyguard:null,bodyguardUntil:0,guardingClient:null,guardingUntil:0,businessProjects:{},businessWorkers:{},businessRejected:{},lastTurnAt:Date.now(),lastActive:Date.now(),createdAt:Date.now(),jobId:null,lastSalaryAt:Date.now(),pvpHits:{},maintenanceDue:Date.now()+86400000,maintenanceDebt:0,maintenanceLastBill:null,sessionVersion:1,lastIp:'',lastUserAgent:'',lastLoginAt:0,failedLogins:0,lockedUntil:0,stats:{wins:0,losses:0,robbed:0,pokerWins:0,crimes:0,operations:0},production:{capacityLevel:1,speedLevel:1,materials:{plant:0,chem:0,pack:0},stock:0,nextAt:0,totalMade:0,totalSold:0},nightlife:{venues:[],nextVenueId:1}}}
+function newUser(name,pw,role='player',email=''){const h=hpw(pw);return{id:crypto.randomUUID(),name,email:String(email||'').trim().toLowerCase().slice(0,120),...h,role,banned:false,vip:false,vipUntil:0,cash:2500000,bank:0,turns:300,hp:100,level:1,xp:0,rep:0,wanted:0,jailedUntil:0,privacy:{cash:true,bank:false,levels:true,stats:true,lastActive:false},education:0,educationProgress:0,securityLevel:1,mafiaLevel:1,propertyLevel:0,mafia:0,guards:0,weapons:{},crypto:0,city:'Paide',businesses:{},carLicense:0,cars:[],gangId:null,spies:{finnish:0,ukrainian:0,russian:0},intelLevel:0,lastSpyAt:{},bodyguard:null,bodyguardUntil:0,guardingClient:null,guardingUntil:0,businessProjects:{},businessWorkers:{},businessRejected:{},lastTurnAt:Date.now(),lastActive:Date.now(),createdAt:Date.now(),jobId:null,lastSalaryAt:Date.now(),pvpHits:{},maintenanceDue:Date.now()+86400000,maintenanceDebt:0,maintenanceLastBill:null,sessionVersion:1,lastIp:'',lastUserAgent:'',lastLoginAt:0,failedLogins:0,lockedUntil:0,stats:{wins:0,losses:0,robbed:0,pokerWins:0,crimes:0,operations:0},production:{capacityLevel:1,speedLevel:1,materials:{plant:0,chem:0,pack:0},stock:0,nextAt:0,totalMade:0,totalSold:0},nightlife:{venues:[],nextVenueId:1}}}
 
 const NPC_RENAMES={'K6ver':'Must Vares','Varikas':'Hall Hunt','Xyron':'Tume Ronk','Vexor':'Kuri Kelm','TumeX':'Vaikne Vari','Noxx':'Öine Susi','Kelmik':'Must Kass','Zynk':'Hall Rott','TontX':'Tume Tont','Kryp':'Külm Kivi','RottX':'Vana Vares','Varnx':'Metsik Nirk','HallVarju':'Pime Udu','Zerro':'Must Kaaren','SodiX':'Sodi','Nyxar':'Terav Pistrik','K2biX':'Hall Mäger','Drayx':'Kobra','VapsikX':'Vapsik','Xenoq':'Raju'};
 const NPC_NAMES=['Must Vares','Hall Hunt','Tume Ronk','Kuri Kelm','Vaikne Vari','Öine Susi','Must Kass','Hall Rott','Tume Tont','Külm Kivi','Vana Vares','Metsik Nirk','Pime Udu','Must Kaaren','Sodi','Terav Pistrik','Hall Mäger','Kobra','Vapsik','Raju'];
@@ -473,8 +871,8 @@ function ensureNpcPlayers(){
 }
 function npcOnline(u,now=Date.now()){return !!u.npc&&Number(u.npcOnlineUntil||0)>now}
 function npcStartSession(u,now){u.npcOnlineUntil=now+rand(8,45)*60000;u.nextNpcActionAt=now+rand(10,90)*1000;u.lastActive=now}
-function npcBuyTroops(u){const prefer=u.npcStyle==='combat'||u.npcStyle==='score',type=prefer?(Math.random()<.55?'mafia':'guards'):(Math.random()<.5?'mafia':'guards'),unit=type==='mafia'?12000:13500,maxByCash=Math.floor(u.cash/(unit*market())),maxByTurns=Math.floor(u.turns/5),rich=Math.max(1,Math.floor(u.cash/5000000)),maxQ=Math.max(prefer?8:5,Math.min(prefer?400:180,rich*(prefer?6:3))),n=Math.max(0,Math.min(rand(1,maxQ),maxByCash,maxByTurns));if(n<1)return false;const cost=Math.floor(n*unit*market());if(!needTurns(u,n*5))return false;u.cash-=cost;gameIncome(cost,'troop_purchase',u);u[type]+=n;return true}
-function npcBuyWeapon(u){const affordable=WEAPONS.map((w,i)=>({w,i,c:weaponPrice(i)})).filter(x=>x.i>0&&x.c<=u.cash&&u.turns>=5);if(!affordable.length)return false;let pick;if(u.npcStyle==='score'||u.npcStyle==='combat')pick=affordable[Math.max(0,affordable.length-1-rand(0,Math.min(2,affordable.length-1)))];else pick=affordable[rand(0,affordable.length-1)];const q=Math.max(1,Math.min(rand(1,u.npcStyle==='score'?4:3),Math.floor(u.cash/pick.c),Math.floor(u.turns/5)));if(q<1)return false;const cost=pick.c*q;if(!needTurns(u,5*q))return false;u.cash-=cost;gameIncome(cost,'weapon_purchase',u);u.weapons[pick.i]=(u.weapons[pick.i]||0)+q;return true}
+function npcBuyTroops(u){const prefer=u.npcStyle==='combat'||u.npcStyle==='score',type=prefer?(Math.random()<.55?'mafia':'guards'):(Math.random()<.5?'mafia':'guards'),unit=type==='mafia'?12000:13500,maxByCash=Math.floor(u.cash/(unit*market())),maxByTurns=Math.floor(u.turns/10),rich=Math.max(1,Math.floor(u.cash/5000000)),maxQ=Math.max(prefer?8:5,Math.min(prefer?400:180,rich*(prefer?6:3))),n=Math.max(0,Math.min(rand(1,maxQ),maxByCash,maxByTurns));if(n<1)return false;const cost=Math.floor(n*unit*market());if(!needTurns(u,n*10))return false;u.cash-=cost;gameIncome(cost,'troop_purchase',u);u[type]+=n;return true}
+function npcBuyWeapon(u){const affordable=WEAPONS.map((w,i)=>({w,i,c:weaponPrice(i)})).filter(x=>x.i>0&&x.c<=u.cash&&u.turns>=10);if(!affordable.length)return false;let pick;if(u.npcStyle==='score'||u.npcStyle==='combat')pick=affordable[Math.max(0,affordable.length-1-rand(0,Math.min(2,affordable.length-1)))];else pick=affordable[rand(0,affordable.length-1)];const q=Math.max(1,Math.min(rand(1,u.npcStyle==='score'?4:3),Math.floor(u.cash/pick.c),Math.floor(u.turns/10)));if(q<1)return false;const cost=pick.c*q;if(!needTurns(u,10*q))return false;u.cash-=cost;gameIncome(cost,'weapon_purchase',u);u.weapons[pick.i]=(u.weapons[pick.i]||0)+q;return true}
 function npcLevelUp(u){let types;if(u.npcStyle==='score')types=['mafia','security','property'];else if(u.npcStyle==='combat')types=['mafia','security','property'];else if(u.npcStyle==='business')types=['property','security','mafia'];else types=['mafia','security','property'].sort(()=>Math.random()-.5);for(const t of types){const field=t==='mafia'?'mafiaLevel':t==='security'?'securityLevel':'propertyLevel',max=t==='property'?100:300,n=(u[field]||0)+1;if(n>max)continue;const base=t==='property'?PROPERTY_PRICES[n]:LEVEL_PRICES[n],cost=Math.floor((base||Infinity)*market());if(Number.isFinite(cost)&&u.cash>=cost){u.cash-=cost;gameIncome(cost,`npc_${t}_level_up`,u);u[field]=n;return true}}return false}
 function npcBuyBusiness(u){const opts=BIZ.map(b=>{const lvl=u.businesses[b.id]||0;return{b,lvl,cost:Math.floor(b.base*Math.pow(2.05,lvl)*market())}}).filter(x=>x.cost<=u.cash&&u.turns>=40);if(!opts.length)return false;const x=u.npcStyle==='business'?opts.sort((a,b)=>a.lvl-b.lvl)[0]:opts[rand(0,opts.length-1)];if(!needTurns(u,40))return false;u.cash-=x.cost;gameIncome(x.cost,'business_upgrade',u);u.businesses[x.b.id]=x.lvl+1;return true}
 function npcBusinessProject(u){
@@ -482,7 +880,7 @@ function npcBusinessProject(u){
   const owned=BIZ.filter(b=>(u.businesses[b.id]||0)>0&&!u.businessProjects[b.id]);if(!owned.length)return false;const b=owned[rand(0,owned.length-1)],lvl=u.businesses[b.id]||1,list=(BUSINESS_PROJECTS[b.id]||[]).map(p=>projectCfg(b.id,p));if(!list.length)return false;const z=list[0];let workers=u.businessWorkers[b.id]||0;if(workers<z.workers){const need=z.workers-workers,unit=Math.floor((db.settings.workerBasePrice||25000)*market()),cost=unit*need,turns=Math.max(5,need);if(u.cash<cost||u.turns<turns)return false;if(!needTurns(u,turns))return false;u.cash-=cost;gameIncome(cost,'worker_hire',u);u.businessWorkers[b.id]=workers+need;workers+=need}
   const cost=Math.floor(b.base*Math.max(1,lvl)*z.costMult*market());if(u.cash<cost||u.turns<z.turns)return false;if(!needTurns(u,z.turns))return false;u.cash-=cost;gameIncome(cost,'business_project_cost',u);u.businessProjects[b.id]={id:crypto.randomUUID(),projectId:z.id,name:z.name,startedAt:Date.now(),endsAt:Date.now()+z.hours*3600000,cost,reward:Math.floor(cost*z.rewardMult*(1+.04*Math.max(0,lvl-1))),workers:z.workers};return true
 }
-function npcCrime(u){if(!freeToAct(u))return false;const choices=CRIMES.filter(c=>u.level>=c.need&&u.turns>=c.turns);if(!choices.length)return false;const pool=u.npcStyle==='crime'?choices.slice(-Math.min(3,choices.length)):choices,c=pool[rand(0,pool.length-1)];if(!needTurns(u,c.turns))return false;const cb=combat(u),fail=clamp(c.risk-cb.atk/(cb.atk+3e6),.04,.72);if(Math.random()<fail){const grossLoss=Math.floor(rand(c.min,c.max)*.25);u.cash=Math.max(0,u.cash-grossLoss);u.wanted=Math.max(0,(u.wanted||0)+2);if(Math.random()<clamp(.08+u.wanted/180,.08,.65)){const mins=5+Math.floor(u.wanted/5);u.jailedUntil=Date.now()+mins*60000}}else{const g=Math.floor(rand(c.min,c.max)*db.settings.heistMultiplier);creditCashWithDebt(u,g,'crime');u.stats.crimes++;u.wanted=Math.max(0,(u.wanted||0)+1+Math.floor(c.risk*5));u.rep=(u.rep||0)+1;u.level=Math.max(u.level||1,1+Math.floor(Math.sqrt(u.stats.crimes/5)));u.xp=Math.max(Number(u.xp||0),u.stats.crimes*10)}return true}
+function npcCrime(u){if(!freeToAct(u))return false;const choices=CRIMES.filter(c=>(u.stats?.crimes||0)>=c.needRobberies&&u.turns>=c.turns);if(!choices.length)return false;const pool=u.npcStyle==='crime'?choices.slice(-Math.min(3,choices.length)):choices,c=pool[rand(0,pool.length-1)];if(!needTurns(u,c.turns))return false;const cb=combat(u),fail=clamp(c.risk-cb.atk/(cb.atk+3e6),.04,.72);if(Math.random()<fail){const grossLoss=Math.floor(rand(c.min,c.max)*.25);u.cash=Math.max(0,u.cash-grossLoss);u.wanted=Math.max(0,(u.wanted||0)+2);if(Math.random()<clamp(.08+u.wanted/180,.08,.65)){const mins=5+Math.floor(u.wanted/5);u.jailedUntil=Date.now()+mins*60000}}else{const g=Math.floor(rand(c.min,c.max)*db.settings.heistMultiplier);creditCashWithDebt(u,g,'crime');u.stats.crimes++;u.wanted=Math.max(0,(u.wanted||0)+1+Math.floor(c.risk*5));u.rep=(u.rep||0)+1;u.level=Math.max(u.level||1,1+Math.floor(Math.sqrt(u.stats.crimes/5)));u.xp=Math.max(Number(u.xp||0),u.stats.crimes*10)}return true}
 function npcAttackPlayer(a){if(!freeToAct(a)||a.turns<30)return false;const now=Date.now(),targets=Object.values(db.users).filter(b=>!b.banned&&b.id!==a.id&&b.role!=='owner'&&(b.cash||0)>0);if(!targets.length)return false;let pool=targets;if(a.npcStyle==='combat'){const A=combat(a);const sensible=targets.filter(b=>combat(b).def<A.atk*1.2);if(sensible.length)pool=sensible}const b=pool[rand(0,pool.length-1)],winMs=db.settings.pvpWindowMin*60000,h=(a.pvpHits[b.id]||[]).filter(t=>now-t<winMs);if(h.length>=db.settings.pvpMaxHits)return false;if(!needTurns(a,30))return false;h.push(now);a.pvpHits[b.id]=h;const A=combat(a),B=combat(b);if(A.atk>B.def){const take=Math.max(0,Math.floor(b.cash*.50));b.cash-=take;a.cash+=take;a.stats.wins++;b.stats.losses++;notify(b,'pvp',`${a.name} ründas sind. Kaotasid ${take} €.`);const loose=freeWeaponMap(b);for(const[i,q]of Object.entries(loose)){const stolen=Math.min(q,Math.max(1,Math.floor(q*.20)));if(stolen>0){b.weapons[i]-=stolen;a.weapons[i]=(a.weapons[i]||0)+stolen}}}else{a.stats.losses++;b.stats.wins++;notify(b,'pvp',`${a.name} proovis sind rünnata, kuid sinu kaitse pidas.`)}return true}
 function npcSaveMoney(u){if(u.cash<150000)return false;const limit=bankLimit(u),space=Math.max(0,limit-u.bank),amt=Math.min(space,Math.floor(u.cash*(.25+Math.random()*.35)));if(amt<10000)return false;u.cash-=amt;u.bank+=amt;return true}
 function npcNightVenueName(u,type){const a=type==='bar'?['Keldribaar','Vana Nurk','Õhtune','Tume Baar']:type==='club'?['Pulse','Varju','Neon','Öölaine']:['Velvet','Siluett','Virvendus','Rubiin'];return `${a[rand(0,a.length-1)]} ${u.name}`.slice(0,36)}
@@ -700,7 +1098,7 @@ function npcAct(u){refresh(u);const risky=npcRisky(u);if(Number(u.maintenanceDeb
   }
   if(r<.12&&npcAttackPlayer(u))return true;if(r<.34&&npcCrime(u))return true;if(r<.50&&npcBuyTroops(u))return true;if(r<.65&&npcBuyWeapon(u))return true;if(r<.78&&npcLevelUp(u))return true;if(r<.90&&npcBuyBusiness(u))return true;return npcCrime(u)||npcBuyWeapon(u)||npcBuyTroops(u)||false
 }
-function npcTick(){const now=Date.now();for(const u of Object.values(db.users)){if(!u.npc||u.banned)continue;refresh(u);if(!npcOnline(u,now)){if(now>=Number(u.nextNpcLoginAt||0)){npcStartSession(u,now)}else continue}if(now>=u.npcOnlineUntil){u.nextNpcLoginAt=now+rand(10,90)*60000;continue}if(now<Number(u.nextNpcActionAt||0))continue;u.lastActive=now;npcAct(u);const style=u.npcStyle||'balanced',pace=style==='crime'||style==='combat'?rand(25,130):style==='saver'?rand(70,220):rand(35,180);u.nextNpcActionAt=now+pace*1000;if(Math.random()<(style==='saver'?.12:.08)){u.npcOnlineUntil=now;u.nextNpcLoginAt=now+rand(style==='saver'?25:15,style==='saver'?150:120)*60000}}saveSoon()}
+function npcTick(){return; /* v8: autonomous bot activity disabled; no new NPC creation */ const now=Date.now();for(const u of Object.values(db.users)){if(!u.npc||u.banned)continue;refresh(u);if(!npcOnline(u,now)){if(now>=Number(u.nextNpcLoginAt||0)){npcStartSession(u,now)}else continue}if(now>=u.npcOnlineUntil){u.nextNpcLoginAt=now+rand(10,90)*60000;continue}if(now<Number(u.nextNpcActionAt||0))continue;u.lastActive=now;npcAct(u);const style=u.npcStyle||'balanced',pace=style==='crime'||style==='combat'?rand(25,130):style==='saver'?rand(70,220):rand(35,180);u.nextNpcActionAt=now+pace*1000;if(Math.random()<(style==='saver'?.12:.08)){u.npcOnlineUntil=now;u.nextNpcLoginAt=now+rand(style==='saver'?25:15,style==='saver'?150:120)*60000}}saveSoon()}
 
 
 function nightlifeState(u){if(!u.nightlife||typeof u.nightlife!=='object')u.nightlife={venues:[],nextVenueId:1};if(!Array.isArray(u.nightlife.venues))u.nightlife.venues=[];return u.nightlife}
@@ -723,8 +1121,8 @@ function nightRefreshBlackMarket(v,now=Date.now()){
  v.blackMarket={slot,nextAt:(slot+1)*900000,limits,targetProfit:target,hourlyCap:hourly};return v.blackMarket
 }
 function nightClubScore(v){nightNormalizeVenue(v);const qa=nightAppeal(v),money=Math.max(0,Number(v.account||0)+Number(v.blackCash||0)),visit=Math.max(0,Number(v.totalVisitors||0)),rev=Math.max(0,Number(v.totalRevenue||0));return Math.max(1,Math.floor(Number(v.area||0)*130+Number(v.reputation||0)*12000+qa.appeal*900+nightStaffFactor(v)*180000+Math.log10(1+money)*180000+Math.log10(1+rev)*220000+Math.log10(1+visit)*140000))}
-function nightClientVenue(v){nightNormalizeVenue(v);const {heat,...out}=v;const bm=nightRefreshBlackMarket(v),guestOptions=(NIGHT_GUESTS[v.type]||[]).map(g=>({...g,fee:nightGuestFee(v,g)})),live=nightLiveState(v);return {...out,clubScore:nightClubScore(v),normalEntryFee:nightBaseTicket(v),liveVisitors:live.visitors,liveTrend:live.trend,guestOptions,actionCosts:{promo:[1,2,3].map(t=>nightPromoCost(v,t)),promoHours:[1,2,3].map(t=>nightPromoHours(t)),vipBase:nightVipBaseCost(v),trainingLevel:v.trainingLevel,trainingNext:nightTrainingCost(v)},blackMarket:{nextAt:bm.nextAt,limits:bm.limits,hourlyCap:bm.hourlyCap}}}
-function nightPublicRows(){const now=Date.now(),rows=[];for(const u of Object.values(db.users)){if(u.banned)continue;refreshNightlife(u);for(const v of nightlifeState(u).venues){nightNormalizeVenue(v);const live=nightLiveState(v,now);rows.push({ownerId:u.id,owner:u.name,name:v.name,type:v.type,city:v.city,area:v.area,open:v.open,entryFee:v.entryFee,lastVisitors:live.visitors,reputation:v.reputation||0,money:Math.floor(Number(v.account||0)+Number(v.blackCash||0)),clubScore:nightClubScore(v),vipActive:!!(v.vipEvent&&now>=v.vipEvent.start&&now<v.vipEvent.end)})}}return rows.sort((a,b)=>b.clubScore-a.clubScore).slice(0,200)}
+function nightClientVenue(v){nightNormalizeVenue(v);const {heat,bankMoveReceipts,...out}=v;const bm=nightRefreshBlackMarket(v),guestOptions=(NIGHT_GUESTS[v.type]||[]).map(g=>({...g,fee:nightGuestFee(v,g)})),live=nightLiveState(v);return {...out,clubScore:nightClubScore(v),normalEntryFee:nightBaseTicket(v),liveVisitors:live.visitors,liveTrend:live.trend,guestOptions,actionCosts:{promo:[1,2,3].map(t=>nightPromoCost(v,t)),promoHours:[1,2,3].map(t=>nightPromoHours(t)),vipBase:nightVipBaseCost(v),trainingLevel:v.trainingLevel,trainingNext:nightTrainingCost(v)},blackMarket:{nextAt:bm.nextAt,limits:bm.limits,hourlyCap:bm.hourlyCap}}}
+function nightPublicRows(){const now=Date.now(),rows=[];for(const u of Object.values(db.users)){if(u.banned||u.npc)continue;refreshNightlife(u);for(const v of nightlifeState(u).venues){nightNormalizeVenue(v);const live=nightLiveState(v,now);rows.push({ownerId:u.id,owner:u.name,name:v.name,type:v.type,city:v.city,area:v.area,open:v.open,entryFee:v.entryFee,lastVisitors:live.visitors,reputation:v.reputation||0,money:Math.floor(Number(v.account||0)+Number(v.blackCash||0)),clubScore:nightClubScore(v),vipActive:!!(v.vipEvent&&now>=v.vipEvent.start&&now<v.vipEvent.end)})}}return rows.sort((a,b)=>b.clubScore-a.clubScore).slice(0,200)}
 function nightNormalizeVenue(v){const now=Date.now();v.area=Math.max(1,Number(v.area||120));v.baseArea=Math.max(1,Number(v.baseArea||v.area));v.extraArea=Math.max(0,Number(v.extraArea||0));v.accountOpen=!!v.accountOpen;v.account=Math.max(0,Number(v.account||v.cashbox||0));v.cashbox=0;v.blackCash=Math.max(0,Number(v.blackCash||0));v.blackStock=v.blackStock&&typeof v.blackStock==='object'?v.blackStock:{ant:0,kok:0,jupp:0};v.heat=clamp(Number(v.heat||0),0,100);v.inventory=v.inventory&&typeof v.inventory==='object'?v.inventory:{};v.itemCondition=v.itemCondition&&typeof v.itemCondition==='object'?v.itemCondition:{};for(const it of NIGHT_SHOP){if(v.inventory[it.id]&&!Number.isFinite(Number(v.itemCondition[it.id])))v.itemCondition[it.id]=100}v.staff=Array.isArray(v.staff)?v.staff:[];v.offers=v.offers&&typeof v.offers==='object'?v.offers:{};v.suppliers=v.suppliers&&typeof v.suppliers==='object'?v.suppliers:{};for(const kind of ['alcohol','food']){const sp=v.suppliers[kind];if(sp){sp.hours=[1,3,6,12].includes(Number(sp.hours))?Number(sp.hours):Math.min(12,Math.max(1,Number(sp.hours)||12));if(!Number.isFinite(Number(sp.startedAt))||Number(sp.startedAt)<=0)sp.startedAt=now;const maxUntil=Number(sp.startedAt)+sp.hours*3600000;if(!Number.isFinite(Number(sp.until))||Number(sp.until)<=0||Number(sp.until)>maxUntil)sp.until=maxUntil}}if(v.securityContract){const sc=v.securityContract;sc.hours=[1,3,6,12].includes(Number(sc.hours))?Number(sc.hours):Math.min(12,Math.max(1,Number(sc.hours)||12));if(!Number.isFinite(Number(sc.remainingMs))){const legacyHours=Number.isFinite(Number(sc.remainingHours))?Number(sc.remainingHours):sc.hours;sc.remainingMs=clamp(legacyHours,0,sc.hours)*3600000}sc.remainingMs=clamp(Number(sc.remainingMs||0),0,sc.hours*3600000);sc.remainingHours=sc.remainingMs/3600000;if(sc.remainingMs<=0)v.securityContract=null}v.events=Array.isArray(v.events)?v.events:[];v.declarations=Array.isArray(v.declarations)?v.declarations:[];v.open=!!v.open;v.windowStart=Number(v.windowStart||now);if(now-v.windowStart>=NIGHT_DAY_MS){const n=Math.floor((now-v.windowStart)/NIGHT_DAY_MS);v.windowStart+=n*NIGHT_DAY_MS;v.usedOpenMs=0}v.usedOpenMs=clamp(Number(v.usedOpenMs||0),0,NIGHT_MAX_OPEN_MS);v.openStartedAt=Number(v.openStartedAt||0);v.lastRevenueAt=Number(v.lastRevenueAt||now);v.lastUsageAt=Number(v.lastUsageAt||v.lastRevenueAt||now);v.currentDecl=v.currentDecl&&typeof v.currentDecl==='object'?v.currentDecl:null;v.entryFee=Math.max(0,Number(v.entryFee||0));v.reputation=clamp(Number(v.reputation||5),0,100);v.totalRevenue=Math.max(0,Number(v.totalRevenue||0));v.totalVisitors=Math.max(0,Number(v.totalVisitors||0));v.pendingStaffEvent=v.pendingStaffEvent||null;v.trainingLevel=clamp(Math.floor(Number(v.trainingLevel||0)),0,100);v.promoUntil=Math.max(0,Number(v.promoUntil||0));v.promoBoost=Math.max(1,Number(v.promoBoost||1));v.promoHourlyCost=Math.max(0,Number(v.promoHourlyCost||0));v.promoTier=clamp(Math.floor(Number(v.promoTier||0)),0,3);v.alerts=Array.isArray(v.alerts)?v.alerts:[];for(const a of v.alerts)if(!a.id)a.id=nightOfferId();v.blackMarket=v.blackMarket&&typeof v.blackMarket==='object'?v.blackMarket:{};v.premiseId=v.premiseId||NIGHT_PREMISES[0].id;nightRefreshBlackMarket(v,now);return v}
 function nightPremise(v){return NIGHT_PREMISES.find(x=>x.id===v.premiseId)||NIGHT_PREMISES[0]}
 function nightUsableArea(v){return Math.max(0,Number(v.area||0)*.75)}
@@ -818,6 +1216,7 @@ function ensureGameClock(){
 function processOneGameTick(tickAt){
   let changed=false;
   for(const u of Object.values(db.users)){
+    if(u.npc===true)continue; // v8: retired player bots get no turns or salary
     if(Number(u.createdAt||0)>tickAt)continue;
     // KÄIGUD – kõik kasutajad saavad sama globaalse ticki peal.
     if(Number(u.turns||0)<Number(db.settings.maxNaturalTurns||3000)){
@@ -838,7 +1237,6 @@ function processOneGameTick(tickAt){
     // WANTED/VIP/KINDLUSTUS – sama 15-min tick.
     if(Number(u.wanted||0)>0&&Math.random()<.25){u.wanted=Math.max(0,Number(u.wanted||0)-1);changed=true}
     if(u.vipUntil&&u.vipUntil<tickAt){u.vip=false;u.vipUntil=0;changed=true}
-    if(u.insurance?.active&&u.insurance.until<tickAt){u.insurance.active=false;changed=true}
   }
   // TURUD/KRÜPTO – samuti üks kord iga ühise 15-min ticki kohta.
   db.settings.cryptoNext=tickAt;
@@ -900,7 +1298,18 @@ function autoRecordSale(u,c,amount){
 function score(u){const progression=progressionScore(u.mafiaLevel,300,160e9,1)+progressionScore(u.securityLevel,300,160e9,1)+progressionScore(u.propertyLevel,100,118e9,0),troops=(Number(u.mafia||0)+Number(u.guards||0))*110,weps=Object.entries(u.weapons||{}).reduce((s,[i,q])=>s+(WEAPONS[i]?.score||0)*q,0),biz=Object.values(u.businesses||{}).reduce((s,l)=>s+l*l*100000,0),nightlife=(u.nightlife&&Array.isArray(u.nightlife.venues)?u.nightlife.venues:[]).reduce((s,v)=>s+nightClubScore(v),0);return Math.max(0,Math.floor(progression+troops+weps+biz+nightlife+autoTradeMetrics(u).score))}
 function market(x=1){return Math.max(.45,Math.min(2.5,Number(db.settings.economyMarket||1)*Number(x||1)))}
 function weaponPrice(i){if(!WEAPONS[i])return 0;if(i===0)return 0;const base=WEAPONS[i].price||0;const raw=Number(db.settings.weaponPriceOverrides?.[i]);return Math.max(1000,Math.min(250000,Math.floor(Number.isFinite(raw)?raw:base)))}
-function baseCombat(u){const cap=(u.mafia+u.guards)*2,w=Object.entries(u.weapons||{}).reduce((s,[i,q])=>s+(WEAPONS[i]?.atk||0)*Math.min(q,cap),0),d=Object.entries(u.weapons||{}).reduce((s,[i,q])=>s+(WEAPONS[i]?.def||0)*Math.min(q,cap),0);return{atk:u.mafia*(20+u.mafiaLevel*1.8)+w,def:u.guards*(22+u.securityLevel*2)+d}}
+function baseCombat(u){
+ // Meeste relvamaht on KOGU arsenali peale, mitte iga relvaliigi kohta uuesti.
+ // Sama kaitstud-relvade loogika peab kehtima PvP-le ja relvaülevaatele.
+ const loose=freeWeaponMap(u);
+ let attack=0,defense=0;
+ for(const [i,q] of Object.entries(u.weapons||{})){
+  const guarded=Math.max(0,Math.floor(Number(q)||0)-Math.floor(Number(loose[i])||0));
+  attack+=(WEAPONS[i]?.atk||0)*guarded;
+  defense+=(WEAPONS[i]?.def||0)*guarded;
+ }
+ return {atk:u.mafia*(20+u.mafiaLevel*1.8)+attack,def:u.guards*(22+u.securityLevel*2)+defense};
+}
 function gameIncome(amount,type,user){amount=Math.max(0,Math.floor(amount||0));db.gameBank.balance=(db.gameBank.balance||0)+amount;db.gameBank.log.unshift({time:Date.now(),type,amount,userId:user?.id||'',user:user?.name||''});db.gameBank.log=db.gameBank.log.slice(0,3000);return amount}
 function netWorth(u){const weapon=Object.entries(u.weapons||{}).reduce((s,[i,q])=>s+Math.floor(weaponPrice(i)*q*.7),0),cars=(u.cars||[]).reduce((s,c)=>s+Math.floor((c.market||c.buy||0)*market(db.settings.carMarket)),0),property=Math.floor((PROPERTY_PRICES[u.propertyLevel]||0)*market()),biz=Object.entries(u.businesses||{}).reduce((s,[id,l])=>{const b=BIZ.find(x=>x.id===id);return s+(b?Math.floor(b.base*Math.pow(2.05,Math.max(0,l-1))*market()):0)},0),crypto=Math.floor((u.crypto||0)*(db.settings.cryptoPrice||0));const debt=Object.values(db.loans||{}).filter(x=>x.borrower===u.id&&['active','overdue'].includes(x.status)).reduce((s,x)=>s+(x.status==='overdue'?Number(x.unpaid||0):loanBaseDue(x)),0);return Math.max(0,Math.floor(u.cash+u.bank+weapon+cars+property+biz+crypto-debt))}
 function notify(u,type,text,data={}){if(!u)return;const n={id:String(db.nextIds.notification++),userId:u.id,time:Date.now(),type,text:String(text).slice(0,500),read:false,data};db.notifications.unshift(n);db.notifications=db.notifications.slice(0,5000);io.to('user:'+u.id).emit('notification',n)}
@@ -932,13 +1341,26 @@ function combat(u){const b=baseCombat(u);let bodyguardBonus=0;if(u.bodyguard&&u.
 
 function freeWeapons(u){return Object.values(freeWeaponMap(u)).reduce((a,b)=>a+b,0)}
 
+// v8 audit: operational catalogue was referenced but never declared.
+// Keep it disabled until existing game-balance values are reconstructed.
+const SECRET_OPS=[];
 const SPY_TYPES={finnish:{name:'Soome agent',skill:.55,hireTurns:5},ukrainian:{name:'Ukraina agent',skill:.70,hireTurns:10},russian:{name:'Vene agent',skill:.82,hireTurns:15}};
 function spyPrice(type){return Math.max(0,Math.floor((db.settings.spyPrices?.[type]??0)*market()))}
 function projectCfg(bid,p){const o=db.settings.businessProjectOverrides?.[bid+'|'+p.id]||{};return {...p,...o}}
 function freeWeaponMap(u){let cap=Math.max(0,(Number(u.mafia||0)+Number(u.guards||0))*2),out={};const entries=Object.entries(u.weapons||{}).map(([i,q])=>[i,Number(q)||0]).sort((a,b)=>(WEAPONS[b[0]]?.price||0)-(WEAPONS[a[0]]?.price||0));for(const[i,q]of entries){const protectedQty=Math.min(q,cap);cap-=protectedQty;const loose=q-protectedQty;if(loose>0)out[i]=loose}return out}
-function insuranceQuote(u,tier='standard',days=7){const c=db.settings.insuranceTiers[tier]||db.settings.insuranceTiers.standard,base=Math.max(0,Number(c.basePrice||0));return Math.floor(base*(days/7)*market()*((u.wanted||0)>=25?1.15:1))}
+function weaponProtectionSummary(u){
+ const free=freeWeaponMap(u),rows=[];
+ let total=0,unprotected=0;
+ for(const [key,value] of Object.entries(u.weapons||{})){
+  const owned=Math.max(0,Math.floor(Number(value)||0)),loose=Math.max(0,Math.floor(Number(free[key])||0));
+  if(!owned)continue;
+  total+=owned;unprotected+=loose;
+  rows.push({index:Number(key),total:owned,guarded:owned-loose,free:loose});
+ }
+ return {total,guarded:total-unprotected,free:unprotected,attackEligible:total-unprotected,rows};
+}
 
-function pub(u){refresh(u);return{id:u.id,name:u.name,role:u.role,banned:u.banned,vip:u.vip,cash:u.cash,bank:u.bank,turns:u.turns,nextTurnsMs:nextTurns(u),serverNow:Date.now(),nextTurnAt:Date.now()+nextTurns(u),level:u.level,xp:u.xp||0,xpNeed:Math.max(50,50*Math.pow(Math.max(1,u.level),2)),education:u.education,educationName:EDU[u.education]?.name||'Puudub',educationProgress:u.educationProgress||0,educationNeed:EDU[u.education+1]?.needTurns||0,bankLimit:bankLimit(u),securityLevel:u.securityLevel,mafiaLevel:u.mafiaLevel,propertyLevel:u.propertyLevel,propertyName:PROPERTY_NAMES[u.propertyLevel]||('Kinnisvara '+u.propertyLevel),mafia:u.mafia,guards:u.guards,weapons:u.weapons,crypto:u.crypto,city:u.city,businesses:u.businesses,carLicense:u.carLicense,cars:u.cars,gangId:u.gangId,score:score(u),combat:combat(u),maintenanceDue:u.maintenanceDue,maintenanceDebt:Math.max(0,Number(u.maintenanceDebt)||0),maintenanceBreakdown:maintenanceBreakdown(u),maintenanceLastBill:u.maintenanceLastBill||null,stats:u.stats,wanted:u.wanted,jailedUntil:u.jailedUntil,rep:u.rep,insurance:u.insurance,privacy:u.privacy,email:u.email,vipUntil:u.vipUntil,netWorth:netWorth(u),spies:u.spies,intelLevel:u.intelLevel,businessProjects:u.businessProjects,businessWorkers:u.businessWorkers,businessRejected:u.businessRejected||{},bodyguard:u.bodyguard,bodyguardUntil:u.bodyguardUntil,joinedAt:u.createdAt,lastActive:u.lastActive,jobId:u.jobId,jobName:jobFor(u)?.name||null,jobPay:jobFor(u)?.pay||0,nextSalaryAt:jobFor(u)?(ensureGameClock()+GAME_TICK_MS):null,jobs:jobList(u),production:u.production,unreadNotifications:db.notifications.filter(n=>n.userId===u.id&&!n.read).length}}
+function pub(u){refresh(u);return{id:u.id,name:u.name,role:u.role,banned:u.banned,vip:u.vip,cash:u.cash,bank:u.bank,turns:u.turns,nextTurnsMs:nextTurns(u),serverNow:Date.now(),nextTurnAt:Date.now()+nextTurns(u),level:u.level,xp:u.xp||0,xpNeed:Math.max(50,50*Math.pow(Math.max(1,u.level),2)),education:u.education,educationName:EDU[u.education]?.name||'Puudub',educationProgress:u.educationProgress||0,educationNeed:EDU[u.education+1]?.needTurns||0,bankLimit:bankLimit(u),securityLevel:u.securityLevel,mafiaLevel:u.mafiaLevel,propertyLevel:u.propertyLevel,propertyName:PROPERTY_NAMES[u.propertyLevel]||('Kinnisvara '+u.propertyLevel),mafia:u.mafia,guards:u.guards,weapons:u.weapons,weaponProtection:weaponProtectionSummary(u),crypto:u.crypto,city:u.city,businesses:u.businesses,carLicense:u.carLicense,cars:u.cars,gangId:u.gangId,score:score(u),combat:combat(u),maintenanceDue:u.maintenanceDue,maintenanceDebt:Math.max(0,Number(u.maintenanceDebt)||0),maintenanceBreakdown:maintenanceBreakdown(u),maintenanceLastBill:(Number(u.maintenanceDebt||0)>0?u.maintenanceLastBill:null),stats:u.stats,wanted:u.wanted,jailedUntil:u.jailedUntil,rep:u.rep,privacy:u.privacy,email:u.email,vipUntil:u.vipUntil,netWorth:netWorth(u),spies:u.spies,intelLevel:u.intelLevel,businessProjects:u.businessProjects,businessWorkers:u.businessWorkers,businessRejected:u.businessRejected||{},bodyguard:u.bodyguard,bodyguardUntil:u.bodyguardUntil,joinedAt:u.createdAt,lastActive:u.lastActive,jobId:u.jobId,jobName:jobFor(u)?.name||null,jobPay:jobFor(u)?.pay||0,nextSalaryAt:jobFor(u)?(ensureGameClock()+GAME_TICK_MS):null,jobs:jobList(u),production:u.production,unreadNotifications:db.notifications.filter(n=>n.userId===u.id&&!n.read&&n.type!=='message').length}}
 const byId=id=>Object.values(db.users).find(u=>u.id===id);
 const byName=name=>db.users[key(name)];
 const resolveUser=x=>byId(String(x||''))||byName(String(x||''));
@@ -948,9 +1370,8 @@ app.use(express.json({limit:'200kb'}));
 // Mängu HTML sisaldab JS-koodi otse failis: väldi brauseri aegunud vahemälu pärast deploy'd.
 app.use((req,res,next)=>{if(req.path==='/'||req.path==='/index.html')res.set('Cache-Control','no-store, max-age=0, must-revalidate');next();});
 app.use(express.static(path.join(__dirname,'public')));
-function auth(req,res,next){const n=untoken((req.headers.authorization||'').replace(/^Bearer\s+/,'')),u=n&&db.users[key(n)];if(!u||u.banned)return res.status(401).json({error:'AUTH'});u.lastActive=Date.now();req.user=u;next()}
+function auth(req,res,next){const n=untoken((req.headers.authorization||'').replace(/^Bearer\s+/,'')),u=n&&db.users[key(n)];if(!u||u.banned||u.npc===true)return res.status(401).json({error:'AUTH'});u.lastActive=Date.now();req.user=u;next()}
 function freeToAct(u){return !(u.jailedUntil&&u.jailedUntil>Date.now())}
-function insuranceCover(u,loss){if(!(u.insurance?.active&&u.insurance.until>Date.now()))return 0;const c=clamp(Number(u.insurance.coverage||0),0,.9),d=clamp(Number(u.insurance.deductible||0),0,.9);return Math.max(0,Math.floor(loss*c*(1-d)))}
 function admin(req,res,next){if(!['owner','admin'].includes(req.user.role))return res.status(403).json({error:'ADMIN_ONLY'});next()}
 function nightlifeGate(req,res,next){next()}
 function ok(res,u,extra={}){saveSoon();res.json({ok:true,user:pub(u),...extra})}
@@ -976,8 +1397,8 @@ async function sendResetEmail(u,raw){
 }
 
 app.post('/api/register',(req,res)=>{const n=norm(req.body.name),p=String(req.body.password||''),email=String(req.body.email||'').trim().toLowerCase();if(n.length<3||p.length<10)return res.status(400).json({error:'Nimi 3–18 märki, parool vähemalt 10.'});if(email&&(!email.includes('@')||email.length>120))return res.status(400).json({error:'Vigane e-mail.'});if(db.users[key(n)])return res.status(409).json({error:'Nimi kasutusel.'});if(email&&Object.values(db.users).some(x=>x.email===email))return res.status(409).json({error:'E-mail on juba kasutusel.'});const u=newUser(n,p,'player',email);u.lastIp=clientIp(req);u.lastUserAgent=String(req.headers['user-agent']||'').slice(0,180);db.users[key(n)]=u;secLog('register',req,u);saveNow();res.json({token:token(n),user:pub(u)})});
-app.post('/api/login',(req,res)=>{const name=req.body.name;if(loginLimited(req,name))return res.status(429).json({error:'Liiga palju sisselogimiskatseid. Proovi 10 minuti pärast.'});const u=db.users[key(name)];if(u?.lockedUntil>Date.now())return res.status(429).json({error:'Konto on ajutiselt lukus.'});if(!u||!checkPw(req.body.password||'',u.salt,u.hash)){if(u){u.failedLogins=(u.failedLogins||0)+1;if(u.failedLogins>=5)u.lockedUntil=Date.now()+15*60000}secLog('login_failed',req,u,{attemptedName:norm(name)});saveSoon();return res.status(401).json({error:'Vale nimi või parool.'})}if(u.banned)return res.status(403).json({error:'Konto on blokeeritud.'});u.failedLogins=0;u.lockedUntil=0;u.lastIp=clientIp(req);u.lastUserAgent=String(req.headers['user-agent']||'').slice(0,180);u.lastLoginAt=Date.now();clearLoginBucket(req,name);secLog('login_ok',req,u);saveSoon();res.json({token:token(u.name),user:pub(u)})});
-app.post('/api/password/forgot',async(req,res)=>{const ident=String(req.body.identifier||req.body.name||'').trim().toLowerCase();const u=db.users[key(ident)]||Object.values(db.users).find(x=>String(x.email||'').toLowerCase()===ident);const generic='Kui konto ja e-mail eksisteerivad, saadeti parooli taastamise juhis.';if(!u){return res.json({message:generic})}const raw=crypto.randomBytes(32).toString('hex'),hash=crypto.createHash('sha256').update(raw).digest('hex');db.passwordResetTokens[hash]={userId:u.id,expires:Date.now()+30*60*1000,used:false};db.resetRequests[u.id]={name:u.name,time:Date.now(),status:'pending'};secLog('password_reset_requested',req,u);saveSoon();let sent=false,provider='';if(u.email){try{provider=await sendResetEmail(u,raw);sent=!!provider}catch(e){console.error('reset mail',e.message)}}if(sent){secLog('password_reset_email_sent',req,u,{provider});return res.json({message:'Parooli taastamise link saadeti e-mailile. Link kehtib 30 minutit.'})}res.json({message:u.email?'Taastamissoov salvestati, kuid e-maili saatmine pole serveris veel seadistatud. Vajadusel saab admin aidata.':'Sellel kontol pole e-maili lisatud. Taastamissoov salvestati ja vajadusel saab admin aidata.'})});
+app.post('/api/login',(req,res)=>{const name=req.body.name;if(loginLimited(req,name))return res.status(429).json({error:'Liiga palju sisselogimiskatseid. Proovi 10 minuti pärast.'});const u=db.users[key(name)];if(u?.lockedUntil>Date.now())return res.status(429).json({error:'Konto on ajutiselt lukus.'});if(!u||!checkPw(req.body.password||'',u.salt,u.hash)){if(u){u.failedLogins=(u.failedLogins||0)+1;if(u.failedLogins>=5)u.lockedUntil=Date.now()+15*60000}secLog('login_failed',req,u,{attemptedName:norm(name)});saveSoon();return res.status(401).json({error:'Vale nimi või parool.'})}if(u.banned||u.npc===true)return res.status(403).json({error:'Konto on blokeeritud.'});u.failedLogins=0;u.lockedUntil=0;u.lastIp=clientIp(req);u.lastUserAgent=String(req.headers['user-agent']||'').slice(0,180);u.lastLoginAt=Date.now();clearLoginBucket(req,name);secLog('login_ok',req,u);saveSoon();res.json({token:token(u.name),user:pub(u)})});
+app.post('/api/password/forgot',async(req,res)=>{const ident=String(req.body.identifier||req.body.name||'').trim().toLowerCase();const u=db.users[key(ident)]||Object.values(db.users).find(x=>String(x.email||'').toLowerCase()===ident);const generic='Kui konto ja e-mail eksisteerivad, saadeti parooli taastamise juhis.';if(!u||u.npc===true){return res.json({message:generic})}const raw=crypto.randomBytes(32).toString('hex'),hash=crypto.createHash('sha256').update(raw).digest('hex');db.passwordResetTokens[hash]={userId:u.id,expires:Date.now()+30*60*1000,used:false};db.resetRequests[u.id]={name:u.name,time:Date.now(),status:'pending'};secLog('password_reset_requested',req,u);saveSoon();let sent=false,provider='';if(u.email){try{provider=await sendResetEmail(u,raw);sent=!!provider}catch(e){console.error('reset mail',e.message)}}if(sent){secLog('password_reset_email_sent',req,u,{provider});return res.json({message:'Parooli taastamise link saadeti e-mailile. Link kehtib 30 minutit.'})}res.json({message:u.email?'Taastamissoov salvestati, kuid e-maili saatmine pole serveris veel seadistatud. Vajadusel saab admin aidata.':'Sellel kontol pole e-maili lisatud. Taastamissoov salvestati ja vajadusel saab admin aidata.'})});
 app.post('/api/password/reset',(req,res)=>{const raw=String(req.body.token||''),nw=String(req.body.password||''),hash=crypto.createHash('sha256').update(raw).digest('hex'),r=db.passwordResetTokens[hash];if(!r||r.used||r.expires<Date.now()||nw.length<10)return res.status(400).json({error:'Taastamislink on vigane/aegunud või parool liiga lühike.'});const u=byId(r.userId);if(!u)return res.status(404).json({error:'Kontot pole.'});const h=hpw(nw);u.salt=h.salt;u.hash=h.hash;u.sessionVersion=(u.sessionVersion||1)+1;r.used=true;if(db.resetRequests[u.id])db.resetRequests[u.id].status='done';secLog('password_reset_done',req,u);saveNow();res.json({message:'Parool muudetud. Logi nüüd sisse.'})});
 app.get('/api/me',auth,(req,res)=>ok(res,req.user,{settings:db.settings}));
 // V6.72 — Üldjutuka API taastatud. V6.71 kliendis oli jutukas alles, kuid serveri /api/chat route'id puudusid.
@@ -1010,20 +1431,54 @@ app.post('/api/chat',auth,(req,res)=>{
 app.post('/api/education',auth,(req,res)=>{const u=req.user,e=EDU[u.education+1];if(!e)return res.status(400).json({error:'Haridus max.'});let spend=Math.max(5,Math.floor(+req.body.turns||5));spend-=spend%5;if(spend<5)spend=5;const remain=e.needTurns-(u.educationProgress||0);spend=Math.min(spend,remain);if(!needTurns(u,spend))return res.status(400).json({error:`Vaja ${spend} käiku.`});u.educationProgress=(u.educationProgress||0)+spend;let message=`Õppisid ${spend} käiku. Progress ${u.educationProgress}/${e.needTurns}.`;if(u.educationProgress>=e.needTurns){u.education++;u.educationProgress=0;message=`Haridus lõpetatud: ${e.name}.`}ok(res,u,{message})});
 app.post('/api/job',auth,(req,res)=>{const u=req.user,id=String(req.body.id||'');const j=(JOBS[u.education]||[]).find(x=>x.id===id);if(!j)return res.status(400).json({error:'See töökoht ei vasta sinu haridusele.'});u.jobId=j.id;u.lastSalaryAt=Date.now();ok(res,u,{message:`Asusid tööle: ${j.name}. Palk ${j.pay} € iga 15 minuti järel panka; kui pank on täis, läheb ülejääk sularahasse.`})});
 app.post('/api/maintenance/pay',auth,(req,res)=>{const u=req.user,debt=Math.max(0,Math.floor(Number(u.maintenanceDebt)||0));if(debt>0){let left=debt,fromBank=Math.min(left,Math.max(0,Math.floor(Number(u.bank)||0)));u.bank-=fromBank;left-=fromBank;let fromCash=Math.min(left,Math.max(0,Math.floor(Number(u.cash)||0)));u.cash-=fromCash;left-=fromCash;const paid=debt-left;if(paid>0)gameIncome(paid,'maintenance_debt_manual',u);u.maintenanceDebt=left;if(!left)notify(u,'maintenance','Kõrvalkulude võlg on tasutud ja pangakonto arest vabastati.');return ok(res,u,{message:left?`Tasuti ${paid} €. Võlga jäi ${left} €.`:`Kõrvalkulude võlg ${paid} € on tasutud; arest vabastati.`})}if(u.maintenanceLastBill&&Date.now()-Number(u.maintenanceLastBill.time||0)<86400000&&u.maintenanceDue>Date.now())return ok(res,u,{message:'Selle perioodi kõrvalkulud on juba tasutud. Järgmine arve tekib tähtajal.'});const bill=chargeMaintenance(u,true);u.maintenanceDue=Date.now()+86400000;ok(res,u,{message:bill.unpaid?`Tasuti ${bill.paid} €. Võlga jäi ${bill.unpaid} € ja pangal on arest.`:`Kõrvalkulud ${bill.paid} € on tasutud.`,bill})});
-app.post('/api/bank',auth,(req,res)=>{const u=req.user,a=Math.floor(+req.body.amount||0);if(a<=0)return res.status(400).json({error:'Vigane summa.'});if(req.body.dir==='in'){if(a>u.cash)return res.status(400).json({error:'Sularaha puudub.'});const payableDebt=Math.min(a,Math.max(0,Math.floor(Number(u.maintenanceDebt)||0))),deposit=a-payableDebt;if(u.bank+deposit>bankLimit(u))return res.status(400).json({error:`Pangalimiit ${bankLimit(u)} €.`});u.cash-=a;payMaintenanceDebtFromIncoming(u,a);u.bank+=deposit}else{if(a>u.bank)return res.status(400).json({error:'Pangas pole piisavalt.'});u.bank-=a;u.cash+=a}ok(res,u)});
+// Stage 9 PILOT: return success only after storage confirms the bank-transfer state.
+// Still NOT deployable: failed saves leave a speculative in-memory mutation and
+// the wider API does not yet carry persistent idempotency keys/transaction guards.
+app.post('/api/bank',auth,async(req,res)=>{
+  const u=req.user,a=Math.floor(+req.body.amount||0);
+  if(a<=0)return res.status(400).json({error:'Vigane summa.'});
+  if(req.body.dir==='in'){
+    if(a>u.cash)return res.status(400).json({error:'Sularaha puudub.'});
+    const payableDebt=Math.min(a,Math.max(0,Math.floor(Number(u.maintenanceDebt)||0)));
+    const deposit=a-payableDebt;
+    if(u.bank+deposit>bankLimit(u))return res.status(400).json({error:`Pangalimiit ${bankLimit(u)} €.`});
+    u.cash-=a;
+    payMaintenanceDebtFromIncoming(u,a);
+    u.bank+=deposit;
+  }else{
+    if(a>u.bank)return res.status(400).json({error:'Pangas pole piisavalt.'});
+    u.bank-=a;
+    u.cash+=a;
+  }
+  try{
+    await saveNow();
+    return res.json({ok:true,user:pub(u)});
+  }catch(e){
+    console.error('[BANK PERSIST] Confirmation failed:',e?.stack||e);
+    return res.status(503).json({error:'Panga toimingut ei saanud andmebaasis kinnitada. Ära korda toimingut enne saldo kontrollimist.'});
+  }
+});
 app.post('/api/levelup',auth,(req,res)=>{const u=req.user,t=req.body.type,field=t==='mafia'?'mafiaLevel':t==='security'?'securityLevel':t==='property'?'propertyLevel':null;if(!field)return res.status(400).json({error:'Vigane level.'});const max=t==='property'?100:300,n=u[field]+1,cost=Math.floor((t==='property'?PROPERTY_PRICES[n]:LEVEL_PRICES[n])*market());if(n>max)return res.status(400).json({error:'Max level.'});if(u.cash<cost)return res.status(400).json({error:`Vaja ${cost} €.`});u.cash-=cost;gameIncome(cost,`${t}_level_up`,u);u[field]=n;ok(res,u,{message:`${t} level ${n}`})});
-app.post('/api/troops',auth,(req,res)=>{const u=req.user,type=req.body.type,n=Math.max(1,Math.min(100000,Math.floor(+req.body.n||0))),unit=type==='mafia'?12000:13500;if(!['mafia','guards'].includes(type))return res.status(400).json({error:'Vigane tüüp.'});const cost=Math.floor(n*unit*market()),turns=n*5;if(u.cash<cost)return res.status(400).json({error:`Vaja ${cost} €.`});if(!needTurns(u,turns))return res.status(400).json({error:`Vaja ${turns} käiku.`});u.cash-=cost;gameIncome(cost,'troop_purchase',u);u[type]+=n;ok(res,u,{message:`+${n} ${type} · ${turns} käiku`})});
-app.post('/api/weapon',auth,(req,res)=>{const u=req.user,i=Math.floor(+req.body.index),q=Math.max(1,Math.min(10000,Math.floor(+req.body.q||1))),w=WEAPONS[i];if(!w)return res.status(400).json({error:'Vigane relv.'});const cost=Math.floor(weaponPrice(i)*q),turns=5*q;db.settings.marketPressure+=q;if(u.cash<cost)return res.status(400).json({error:'Raha pole piisavalt.'});if(!needTurns(u,turns))return res.status(400).json({error:`Vaja ${turns} käiku.`});u.cash-=cost;gameIncome(cost,'weapon_purchase',u);u.weapons[i]=(u.weapons[i]||0)+q;ok(res,u,{message:`Ostsid ${q} × ${w.name}`})});
-app.post('/api/crime',auth,(req,res)=>{const u=req.user,c=CRIMES.find(x=>x.id===req.body.id);if(!freeToAct(u))return res.status(403).json({error:'Oled vanglas.'});if(!c||u.level<c.need)return res.status(400).json({error:'Rööv lukus.'});if(!needTurns(u,c.turns))return res.status(400).json({error:`Vaja ${c.turns} käiku.`});const cb=combat(u),fail=clamp(c.risk-cb.atk/(cb.atk+3e6),.04,.72);let msg;if(Math.random()<fail){const grossLoss=Math.floor(rand(c.min,c.max)*.25);let refund=0;if(u.insurance?.active&&u.insurance.until>Date.now()){refund=insuranceCover(u,grossLoss);if(refund>0){u.bank=(Number(u.bank)||0)+refund;db.gameBank.balance=Math.max(0,(db.gameBank.balance||0)-refund);db.gameBank.log.unshift({time:Date.now(),type:'insurance_payout',amount:-refund,userId:u.id,user:u.name});msg=`Kindlustus kattis ${refund} € ja hüvitis läks sinu pangakontole. `}else msg=''}else msg='';u.cash=Math.max(0,u.cash-grossLoss);const loss=Math.max(0,grossLoss-refund);u.wanted=Math.max(0,(u.wanted||0)+2);if(Math.random()<clamp(.08+u.wanted/180,.08,.65)){const mins=5+Math.floor(u.wanted/5);u.jailedUntil=Date.now()+mins*60000;msg+=`Jäid ${mins} minutiks vangi. `}msg+=`Rööv ebaõnnestus. Kaotasid ${loss} €.`}else{const g=Math.floor(rand(c.min,c.max)*db.settings.heistMultiplier);creditCashWithDebt(u,g,'crime');u.stats.crimes++;u.wanted=Math.max(0,(u.wanted||0)+1+Math.floor(c.risk*5));u.rep=(u.rep||0)+1;u.level=Math.max(u.level||1,1+Math.floor(Math.sqrt(u.stats.crimes/5)));u.xp=Math.max(Number(u.xp||0),u.stats.crimes*10);msg=`Rööv õnnestus: +${g} €.`}ok(res,u,{message:msg})});
-app.get('/api/players',auth,(req,res)=>{const now=Date.now(),all=Object.values(db.users).filter(x=>!x.banned),rows=all.map(x=>({id:x.id,name:x.name,role:x.role,level:x.level,score:score(x),city:x.city,gangId:x.gangId,vip:x.vip,rep:x.rep,wanted:x.wanted,lastActive:x.lastActive,online:x.npc?npcOnline(x,now):(now-(x.lastActive||0)<180000)})).sort((a,b)=>b.score-a.score);const visibleRows=rows.slice(0,200);if(!visibleRows.some(x=>x.id===req.user.id)){const own=rows.find(x=>x.id===req.user.id);if(own)visibleRows.push(own)}const onlineNow=all.filter(x=>x.npc?npcOnline(x,now):(now-(x.lastActive||0)<180000)).length,active24h=all.filter(x=>now-Number(x.lastActive||0)<86400000).length;res.json({players:visibleRows,onlineNow,active24h,totalAccounts:all.length})});
-app.post('/api/rob-player',auth,(req,res)=>{const a=req.user,b=resolveUser(req.body.targetName||req.body.targetId);if(!b||b.id===a.id)return res.status(400).json({error:'Vigane sihtmärk.'});if(b.role==='owner')return res.status(403).json({error:'Mängu ownerit ei saa rünnata.'});if(!freeToAct(a))return res.status(403).json({error:'Oled vanglas.'});const now=Date.now(),winMs=db.settings.pvpWindowMin*60000,k=b.id,h=(a.pvpHits[k]||[]).filter(t=>now-t<winMs);if(h.length>=db.settings.pvpMaxHits)return res.status(429).json({error:`Seda mängijat saad ${db.settings.pvpWindowMin} min jooksul rünnata max ${db.settings.pvpMaxHits} korda.`});const assist=req.body.gangAssist===true,assistBonus=assist?gangCombatBonus(a,true):0;if(assist&&!assistBonus)return res.status(400).json({error:'Kamba ründeabi pole saadaval.'});const attackCost=30+(assist?50:0);if(!needTurns(a,attackCost))return res.status(400).json({error:`Vaja ${attackCost} käiku.`});h.push(now);a.pvpHits[k]=h;const A=combat(a),B=combat(b);A.atk+=assistBonus;let msg;if(A.atk>B.def){const take=Math.max(0,Math.floor(b.cash*.50));b.cash-=take;creditCashWithDebt(a,take,'pvp_rob');let covered=insuranceCover(b,take);if(covered>0){b.bank=(Number(b.bank)||0)+covered;db.gameBank.balance=Math.max(0,(db.gameBank.balance||0)-covered);db.gameBank.log.unshift({time:Date.now(),type:'insurance_payout',amount:-covered,userId:b.id,user:b.name})}a.stats.wins++;b.stats.losses++;msg=`Võit! Röövisid ${take} € (50% ohvri hetkesularahast).`;notify(b,'pvp',`${a.name} ründas sind. Kaotasid ${take} €. Kindlustus kattis ${covered} €.`,{attacker:a.id,lost:take,covered});if(a.gangId&&db.gangs[a.gangId]){const g=db.gangs[a.gangId];g.points=(g.points||0)+1;recordGangAttack(g,a,true)}expireBounties(now);for(const bo of Object.values(db.bounties)){if(bo.active&&Number(bo.expiresAt||0)>now&&bo.targetId===b.id){bo.progress=bo.progress||{};bo.progress[a.id]=(bo.progress[a.id]||0)+1;if(bo.progress[a.id]>=(bo.requiredHits||1)){creditCashWithDebt(a,bo.reward,'bounty_reward');bo.active=false;bo.claimedBy=a.id;bo.claimedAt=Date.now();msg+=` Pearaha +${bo.reward} €.`}}}const loose=freeWeaponMap(b);let stolenTotal=0,stolenNames=[];for(const[i,q]of Object.entries(loose)){const stolen=Math.min(q,Math.max(1,Math.floor(q*.20)));if(stolen>0){b.weapons[i]-=stolen;a.weapons[i]=(a.weapons[i]||0)+stolen;stolenTotal+=stolen;stolenNames.push(`${WEAPONS[i]?.name||'relv'} ×${stolen}`)}}if(stolenTotal){msg+=` Vabu relvi saagiks: ${stolenNames.join(', ')}.`;notify(b,'pvp',`Kaotasid kaitsmata relvi: ${stolenNames.join(', ')}.`)}}else{a.stats.losses++;b.stats.wins++;if(a.gangId&&db.gangs[a.gangId]){const g=db.gangs[a.gangId];recordGangAttack(g,a,false)}msg='Rünnak ebaõnnestus. Vastase kaitse oli liiga tugev.';notify(b,'pvp',`${a.name} proovis sind rünnata, kuid sinu kaitse pidas.`,{attacker:a.id})}ok(res,a,{message:msg})});
+app.post('/api/troops',auth,(req,res)=>{const u=req.user,type=req.body.type,n=Math.max(1,Math.min(100000,Math.floor(+req.body.n||0))),unit=type==='mafia'?12000:13500;if(!['mafia','guards'].includes(type))return res.status(400).json({error:'Vigane tüüp.'});const cost=Math.floor(n*unit*market()),turns=n*10;if(u.cash<cost)return res.status(400).json({error:`Vaja ${cost} €.`});if(!needTurns(u,turns))return res.status(400).json({error:`Vaja ${turns} käiku.`});u.cash-=cost;gameIncome(cost,'troop_purchase',u);u[type]+=n;ok(res,u,{message:`+${n} ${type} · ${turns} käiku`})});
+app.post('/api/weapon',auth,(req,res)=>{const u=req.user,i=Math.floor(+req.body.index),q=Math.max(1,Math.min(10000,Math.floor(+req.body.q||1))),w=WEAPONS[i];if(!w)return res.status(400).json({error:'Vigane relv.'});const cost=Math.floor(weaponPrice(i)*q),turns=10*q;if(u.cash<cost)return res.status(400).json({error:'Raha pole piisavalt.'});if(!needTurns(u,turns))return res.status(400).json({error:`Vaja ${turns} käiku.`});db.settings.marketPressure+=q;u.cash-=cost;gameIncome(cost,'weapon_purchase',u);u.weapons[i]=(u.weapons[i]||0)+q;ok(res,u,{message:`Ostsid ${q} × ${w.name}`})});
+app.post('/api/crime',auth,(req,res)=>{const u=req.user,c=CRIMES.find(x=>x.id===req.body.id);if(!freeToAct(u))return res.status(403).json({error:'Oled vanglas.'});if(!c||(Number(u.stats?.crimes)||0)<c.needRobberies)return res.status(400).json({error:`Rööv lukus. Vajalik ${c?.needRobberies||0} edukat röövi.`});if(!needTurns(u,c.turns))return res.status(400).json({error:`Vaja ${c.turns} käiku.`});const cb=combat(u),fail=clamp(c.risk-cb.atk/(cb.atk+3e6),.04,.72);let msg;if(Math.random()<fail){const grossLoss=Math.floor(rand(c.min,c.max)*.25);msg='';u.cash=Math.max(0,u.cash-grossLoss);const loss=grossLoss;u.wanted=Math.max(0,(u.wanted||0)+2);if(Math.random()<clamp(.08+u.wanted/180,.08,.65)){const mins=5+Math.floor(u.wanted/5);u.jailedUntil=Date.now()+mins*60000;msg+=`Jäid ${mins} minutiks vangi. `}msg+=`Rööv ebaõnnestus. Kaotasid ${loss} €.`}else{const g=Math.floor(rand(c.min,c.max)*db.settings.heistMultiplier);creditCashWithDebt(u,g,'crime');u.stats.crimes++;u.wanted=Math.max(0,(u.wanted||0)+1+Math.floor(c.risk*5));u.rep=(u.rep||0)+1;u.level=Math.max(u.level||1,1+Math.floor(Math.sqrt(u.stats.crimes/5)));u.xp=Math.max(Number(u.xp||0),u.stats.crimes*10);msg=`Rööv õnnestus: +${g} €.`}ok(res,u,{message:msg})});
+app.get('/api/players',auth,(req,res)=>{
+ const now=Date.now(),all=Object.values(db.users).filter(x=>!x.banned&&!x.npc);
+ const rows=all.map(x=>({id:x.id,name:x.name,role:x.role,level:x.level,score:score(x),city:x.city,gangId:x.gangId,vip:x.vip,rep:x.rep,wanted:x.wanted,lastActive:x.lastActive,online:now-(x.lastActive||0)<180000})).sort((a,b)=>b.score-a.score);
+ const size=25,pages=Math.max(1,Math.ceil(rows.length/size)),rawPage=Number(req.query.page),page=Number.isSafeInteger(rawPage)&&rawPage>0?Math.min(rawPage,pages):1;
+ const visibleRows=rows.slice((page-1)*size,page*size);
+ const owner=rows.find(x=>x.role==='owner');
+ res.json({players:visibleRows,owner:owner?{id:owner.id,name:owner.name,role:owner.role}:null,page,totalPages:pages,pageSize:size,totalAccounts:all.length,onlineNow:all.filter(x=>now-Number(x.lastActive||0)<180000).length,active24h:all.filter(x=>now-Number(x.lastActive||0)<86400000).length});
+});
+app.post('/api/rob-player',auth,(req,res)=>{const a=req.user,b=resolveUser(req.body.targetName||req.body.targetId);if(!b||b.id===a.id)return res.status(400).json({error:'Vigane sihtmärk.'});if(b.role==='owner')return res.status(403).json({error:'Mängu ownerit ei saa rünnata.'});if(!freeToAct(a))return res.status(403).json({error:'Oled vanglas.'});const now=Date.now(),winMs=db.settings.pvpWindowMin*60000,k=b.id,h=(a.pvpHits[k]||[]).filter(t=>now-t<winMs);if(h.length>=db.settings.pvpMaxHits)return res.status(429).json({error:`Seda mängijat saad ${db.settings.pvpWindowMin} min jooksul rünnata max ${db.settings.pvpMaxHits} korda.`});const assist=req.body.gangAssist===true,assistBonus=assist?gangCombatBonus(a,true):0;if(assist&&!assistBonus)return res.status(400).json({error:'Kamba ründeabi pole saadaval.'});const attackCost=30+(assist?50:0);if(!needTurns(a,attackCost))return res.status(400).json({error:`Vaja ${attackCost} käiku.`});h.push(now);a.pvpHits[k]=h;const A=combat(a),B=combat(b);A.atk+=assistBonus;let msg;if(A.atk>B.def){const take=Math.max(0,Math.floor(b.cash*.50));b.cash-=take;creditCashWithDebt(a,take,'pvp_rob');const covered=0;a.stats.wins++;b.stats.losses++;msg=`Võit! Röövisid ${take} € (50% ohvri hetkesularahast).`;notify(b,'pvp',`${a.name} ründas sind. Kaotasid ${take} €.`,{attacker:a.id,lost:take,covered});if(a.gangId&&db.gangs[a.gangId]){const g=db.gangs[a.gangId];g.points=(g.points||0)+1;recordGangAttack(g,a,true)}expireBounties(now);for(const bo of Object.values(db.bounties)){if(bo.active&&Number(bo.expiresAt||0)>now&&bo.targetId===b.id){bo.progress=bo.progress||{};bo.progress[a.id]=(bo.progress[a.id]||0)+1;if(bo.progress[a.id]>=(bo.requiredHits||1)){creditCashWithDebt(a,bo.reward,'bounty_reward');bo.active=false;bo.claimedBy=a.id;bo.claimedAt=Date.now();msg+=` Pearaha +${bo.reward} €.`}}}const loose=freeWeaponMap(b);let stolenTotal=0,stolenNames=[];for(const[i,q]of Object.entries(loose)){const stolen=Math.min(q,Math.max(1,Math.floor(q*.20)));if(stolen>0){b.weapons[i]-=stolen;a.weapons[i]=(a.weapons[i]||0)+stolen;stolenTotal+=stolen;stolenNames.push(`${WEAPONS[i]?.name||'relv'} ×${stolen}`)}}if(stolenTotal){msg+=` Vabu relvi saagiks: ${stolenNames.join(', ')}.`;notify(b,'pvp',`Kaotasid kaitsmata relvi: ${stolenNames.join(', ')}.`)}}else{a.stats.losses++;b.stats.wins++;if(a.gangId&&db.gangs[a.gangId]){const g=db.gangs[a.gangId];recordGangAttack(g,a,false)}msg='Rünnak ebaõnnestus. Vastase kaitse oli liiga tugev.';notify(b,'pvp',`${a.name} proovis sind rünnata, kuid sinu kaitse pidas.`,{attacker:a.id})}ok(res,a,{message:msg})});
 app.post('/api/travel',auth,(req,res)=>{const u=req.user;if(!freeToAct(u))return res.status(403).json({error:'Oled vanglas.'});const c=CITIES.find(x=>x[0]===req.body.city);if(!c)return res.status(400).json({error:'Linna pole.'});if(!needTurns(u,10))return res.status(400).json({error:'Reisimine vajab 10 käiku.'});const wantedMult=(u.wanted||0)>=50?1.25:1,cost=Math.floor((db.settings.travelBase||105000)*market()*wantedMult);if(u.cash<cost)return res.status(400).json({error:`Reis maksab ${cost} €.`});u.cash-=cost;gameIncome(cost,'travel',u);u.city=c[0];ok(res,u,{message:`Reisisid: ${c[0]}`})});
 app.post('/api/business',auth,(req,res)=>{const u=req.user,b=BIZ.find(x=>x.id===req.body.id);if(!b)return res.status(400).json({error:'Firma puudub.'});const lvl=u.businesses[b.id]||0,n=lvl+1,cost=Math.floor(b.base*Math.pow(2.05,lvl)*market());if(u.cash<cost)return res.status(400).json({error:`Vaja ${cost} €.`});if(!needTurns(u,40))return res.status(400).json({error:'Vaja 40 käiku.'});u.cash-=cost;gameIncome(cost,'business_upgrade',u);u.businesses[b.id]=n;ok(res,u,{message:`${b.name} level ${n}`})});
 app.post('/api/business/collect',auth,(req,res)=>{const u=req.user;let gross=0,tax=0,n=0;for(const [id,p] of Object.entries(u.businessProjects||{})){if(Date.now()<p.endsAt)continue;const g=Math.floor(p.reward*market()),t=Math.floor(g*(db.settings.businessTax||.08));gross+=g;tax+=t;delete u.businessProjects[id];n++}if(!n)return res.status(400).json({error:'Valmis projekte pole.'});const net=gross-tax,d=creditBusinessWithDebt(u,net,'business_collect');gameIncome(tax,'business_tax',u);ok(res,u,{message:`Kogusid ${n} projekti: bruto ${gross} €, maks ${tax} €, kätte ${net} €${d.paid?` (võla katteks ${d.paid} €)`:''}.`})});
 
 // VARJURIIK v6.81: eraldi automajandus. Vana autoandmestik ja vanad marsruudid jäävad alles.
+// v8: All six ultra-premium civilian brand bases reduced by exactly 20%; ordinary models unchanged.
 const AUTO_BRANDS=[
- ['Škoda','Octavia',220000],['Opel','Astra',170000],['Citroën','C4',165000],['Peugeot','308',190000],['Renault','Megane',185000],['Ford','Focus',210000],['Volkswagen','Golf',255000],['Toyota','Corolla',265000],['Honda','Civic',270000],['Hyundai','i30',215000],['Kia','Ceed',215000],['SEAT','Leon',215000],['Dacia','Duster',175000],['Nissan','Qashqai',270000],['Mazda','3',260000],['Fiat','Tipo',145000],['Suzuki','Vitara',230000],['Mitsubishi','Outlander',280000],['Subaru','Outback',350000],['Volvo','V60',480000],['Lexus','IS',510000],['Audi','A6',680000],['BMW','530d',750000],['Mercedes-Benz','E 220',790000],['MINI','Cooper',350000],['Jeep','Compass',400000],['Land Rover','Discovery',1100000],['Jaguar','XF',850000],['Porsche','911',2100000],['Tesla','Model 3',690000],['Polestar','2',660000],['Cupra','Formentor',455000],['Alfa Romeo','Giulia',670000],['Maserati','Ghibli',1350000],['Bentley','Continental GT',4200000],['Ferrari','Roma',5200000],['Lamborghini','Huracán',5900000],['McLaren','720S',6500000],['Aston Martin','Vantage',3700000],['Bugatti','Chiron',90000000],['Rolls-Royce','Phantom',180000000],['Pagani','Huayra',450000000],['Koenigsegg','Jesko',650000000],['Rimac','Nevera',320000000],['Maybach','S 680',100000000]
+ ['Škoda','Octavia',220000],['Opel','Astra',170000],['Citroën','C4',165000],['Peugeot','308',190000],['Renault','Megane',185000],['Ford','Focus',210000],['Volkswagen','Golf',255000],['Toyota','Corolla',265000],['Honda','Civic',270000],['Hyundai','i30',215000],['Kia','Ceed',215000],['SEAT','Leon',215000],['Dacia','Duster',175000],['Nissan','Qashqai',270000],['Mazda','3',260000],['Fiat','Tipo',145000],['Suzuki','Vitara',230000],['Mitsubishi','Outlander',280000],['Subaru','Outback',350000],['Volvo','V60',480000],['Lexus','IS',510000],['Audi','A6',680000],['BMW','530d',750000],['Mercedes-Benz','E 220',790000],['MINI','Cooper',350000],['Jeep','Compass',400000],['Land Rover','Discovery',1100000],['Jaguar','XF',850000],['Porsche','911',2100000],['Tesla','Model 3',690000],['Polestar','2',660000],['Cupra','Formentor',455000],['Alfa Romeo','Giulia',670000],['Maserati','Ghibli',1350000],['Bentley','Continental GT',4200000],['Ferrari','Roma',5200000],['Lamborghini','Huracán',5900000],['McLaren','720S',6500000],['Aston Martin','Vantage',3700000],['Bugatti','Chiron',72000000],['Rolls-Royce','Phantom',144000000],['Pagani','Huayra',360000000],['Koenigsegg','Jesko',520000000],['Rimac','Nevera',256000000],['Maybach','S 680',80000000]
 ].map(([brand,model,base])=>({brand,model,base}));
 // v6.91: markide esindusõigus avab kogu vastava margi mudelivaliku.
 const AUTO_DEALER_MODELS=Object.freeze({"Škoda": ["Fabia", "Scala", "Octavia", "Superb", "Kodiaq"], "Opel": ["Corsa", "Astra", "Insignia", "Grandland"], "Citroën": ["C3", "C4", "C5 Aircross"], "Peugeot": ["208", "308", "3008", "508"], "Renault": ["Clio", "Megane", "Captur", "Austral"], "Ford": ["Fiesta", "Focus", "Kuga", "Mustang"], "Volkswagen": ["Polo", "Golf", "Passat", "Tiguan", "Touareg"], "Toyota": ["Yaris", "Corolla", "Camry", "RAV4", "Land Cruiser"], "Honda": ["Jazz", "Civic", "HR-V", "CR-V"], "Hyundai": ["i20", "i30", "Tucson", "Santa Fe"], "Kia": ["Picanto", "Ceed", "Sportage", "Sorento"], "SEAT": ["Ibiza", "Leon", "Arona", "Ateca"], "Dacia": ["Sandero", "Duster", "Jogger"], "Nissan": ["Micra", "Qashqai", "X-Trail"], "Mazda": ["2", "3", "CX-5", "CX-60"], "Fiat": ["500", "Tipo", "Panda"], "Suzuki": ["Swift", "Vitara", "S-Cross"], "Mitsubishi": ["ASX", "Outlander", "Eclipse Cross"], "Subaru": ["Impreza", "Outback", "Forester"], "Volvo": ["V40", "V60", "XC60", "XC90"], "Lexus": ["IS", "ES", "NX", "RX"], "Audi": ["A3", "A4", "A6", "A8", "Q5", "Q7", "RS6"], "BMW": ["118i", "320d", "530d", "740d", "X3", "X5", "M3", "M5"], "Mercedes-Benz": ["A 180", "C 220", "E 220", "S 350", "GLC", "GLE", "AMG GT"], "MINI": ["Cooper", "Countryman"], "Jeep": ["Renegade", "Compass", "Wrangler"], "Land Rover": ["Discovery", "Defender", "Range Rover"], "Jaguar": ["XE", "XF", "F-Pace"], "Porsche": ["Macan", "Cayenne", "Panamera", "911"], "Tesla": ["Model 3", "Model Y", "Model S", "Model X"], "Polestar": ["2", "3", "4"], "Cupra": ["Leon", "Formentor", "Born"], "Alfa Romeo": ["Giulietta", "Giulia", "Stelvio"], "Maserati": ["Ghibli", "Grecale", "Levante"], "Bentley": ["Continental GT", "Flying Spur", "Bentayga"], "Ferrari": ["Roma", "296 GTB", "SF90"], "Lamborghini": ["Huracán", "Urus", "Revuelto"], "McLaren": ["Artura", "720S", "750S"], "Aston Martin": ["Vantage", "DB12", "DBX"], "Bugatti": ["Chiron", "Tourbillon"], "Rolls-Royce": ["Ghost", "Cullinan", "Phantom", "Spectre"], "Pagani": ["Huayra", "Utopia", "Zonda"], "Koenigsegg": ["Jesko", "Gemera", "Regera"], "Rimac": ["Nevera", "Nevera R"], "Maybach": ["S 580", "S 680", "GLS 600"]});
@@ -1033,7 +1488,7 @@ function autoDealerRows(brand){
  return names.map((model,i)=>{
   const variation= Math.pow(1.17,i-names.indexOf(seed.model));
   const base=Math.max(25000,Math.round(seed.base*variation/1000)*1000);
-  return {brand,model,base,newDealerCost:Math.floor(base*2),newRecommendedPrice:Math.round(base*2.55/1000)*1000};
+  return {brand,model,base,newDealerCost:Math.floor(base*2),newRecommendedPrice:Math.round(base*2.25/1000)*1000};
  });
 }
 // V6.98: fiktiivne tsiviilkasutuseks demilitariseeritud sõjaväesõidukite turg.
@@ -1137,26 +1592,32 @@ function autoTuneOptions(c){
  return AUTO_TUNE_CATALOG.filter(x=>!x.combustion||!electric).map(x=>({id:x.id,group:x.group||'',name:x.name,description:x.description,price:Math.max(x.min,Math.floor(base*x.rate)),installed:done.includes(x.id)}));
 }
 function autoWorld(){if(!db.autoWorld||typeof db.autoWorld!=='object')db.autoWorld={used:[],auctions:{},nextRefresh:0,history:[]};return db.autoWorld}
+// v8: autoäri avamine on ühekordne kulu isiklikust sularahast ja käikudest.
+// Autoäri 5M stardikapital antakse ÜKS KORD alles pärast edukat avamist,
+// mitte autoäri lehe vaatamisel. Vanade avatud autoäride saldosid ei nullita.
+const AUTO_OPEN_CASH=5_000_000;
+const AUTO_OPEN_TURNS=200;
+const AUTO_STARTER_CAPITAL=5_000_000;
+const AUTO_PURCHASE_TURNS=5; // v8: kõik autoostud, ka vana autopoe ja mängijatevahelise turu ostud
+
 function autoState(u){
- // v6.84: Iga konto saab ÜHE korra 1 000 000 € autoäri algkapitali.
- // Vanad kontojäägid säilivad, mitte ei nullita ega kirjutata üle.
  if(!u.autoTrade||typeof u.autoTrade!=='object')u.autoTrade={city:'',yard:3,garage:1,balance:0,diagnostics:1,history:[],fines:0};
  const a=u.autoTrade;
- if(a.starterGrantV684!==true){
-  a.balance=Math.max(0,Number(a.balance)||0)+1000000;
+ if(a.city&&a.starterGrantV684!==true){
+  a.balance=Math.max(0,Number(a.balance)||0)+AUTO_STARTER_CAPITAL;
   a.starterGrantV684=true;
   if(!Array.isArray(a.history))a.history=[];
-  a.history.unshift({time:Date.now(),message:'Autoäri ühekordne stardikapital: 1 000 000 €.'});
+  a.history.unshift({time:Date.now(),message:'Autoäri ühekordne stardikapital: 5 000 000 €.'});
   a.history=a.history.slice(0,40);
  }
  return a;
 }
-// v6.97: isiklikust sularahast autoäri kontole piiratud kapitalisissemaksed.
+// v8: 10M per investment, 3000 turns, no 24h restriction.
 const AUTO_DEPOSIT_WINDOW_MS=24*60*60*1000;
 const AUTO_DEPOSIT_MAX_SINGLE=10_000_000;
-const AUTO_DEPOSIT_MAX_DAY=20_000_000;
-const AUTO_DEPOSIT_MAX_COUNT=3;
-const AUTO_DEPOSIT_TURNS=200;
+const AUTO_DEPOSIT_MAX_DAY=Number.MAX_SAFE_INTEGER; // v8: no rolling 24h money ceiling
+const AUTO_DEPOSIT_MAX_COUNT=Number.MAX_SAFE_INTEGER; // v8: no rolling 24h number ceiling
+const AUTO_DEPOSIT_TURNS=3000;
 function autoDepositStatus(a,now=Date.now()){
  if(!Array.isArray(a.capitalDeposits))a.capitalDeposits=[];
  a.capitalDeposits=a.capitalDeposits.filter(x=>Number.isFinite(Number(x.time))&&Number(x.time)>now-AUTO_DEPOSIT_WINDOW_MS&&Number.isSafeInteger(x.amount)&&x.amount>0);
@@ -1192,12 +1653,12 @@ function autoIdealPrice(c){
  const base=Number(row?.base||c.vehicleBase||c.buy||c.market||150000);
  const year=Math.max(1980,Math.min(2026,Number(c.year)||2026));
  const age=Math.max(0,2026-year),km=Math.max(0,Number(c.km)||parseInt(String(c.mileage||'0').replace(/[^0-9]/g,''),10)||0);
- const newRecommended=base*2.55; // soovituslik uus auto lõpptarbija müügihind
+ const newRecommended=base*2.25; // soovituslik uus auto lõpptarbija müügihind
  if(age===0&&km<1000)return Math.round(newRecommended/1000)*1000;
  const depreciation=Math.max(.09,Math.pow(.915,age));
  const kmFactor=Math.max(.70,1-Math.max(0,km-50000)/1600000);
  const tuningFactor=1+Math.min(0.18,Math.max(0,Number(c.tuning)||0)*.025);
- return Math.max(15000, Math.round(newRecommended*depreciation*kmFactor*tuningFactor/1000)*1000, Math.ceil((Number(c.market)||0)*1.12/1000)*1000);
+ return Math.max(15000, Math.round(newRecommended*depreciation*kmFactor*tuningFactor/1000)*1000);
 }
 // V6.93: dynamic diagnostics prices tied to vehicle value and age, never a flat 12 000 €.
 function autoDiagnosticPrice(c){
@@ -1205,8 +1666,36 @@ function autoDiagnosticPrice(c){
  return Math.max(1500,Math.min(150000,Math.round((2000+ideal*.012+age*240)/500)*500));
 }
 // A consistent market benchmark; listing price is not automatically the fair value.
-function autoNpcFairValue(c){return Math.max(1,Math.floor(autoIdealPrice(c)))}
-function autoNewCar(row,used=true,city){const now=Date.now(),year=used?rand(2003,2024):2026,age=2026-year,km=used?rand(20000,360000):0,base=row.base,price=used?Math.max(12000,Math.floor((base*2.55)*Math.max(.09,Math.pow(.915,age))*Math.max(.70,1-Math.max(0,km-50000)/1600000)*(.58+Math.random()*.32))):Math.floor(base*2);const faults=used?AUTO_FAULTS.filter(()=>Math.random()<(.10+age*.012)).map(([name,severity])=>({name,severity,repair:Math.max(1200,Math.floor(price*severity*(.5+Math.random())))})):[];return{id:crypto.randomUUID(),autoV2:true,name:`${row.brand} ${row.model}`,brand:row.brand,model:row.model,year,mileage:km+' km',km,city:city||AUTO_CITIES[rand(0,AUTO_CITIES.length-1)],buy:price,market:price,quality:used?'Kasutatud':'Uus',faults,diagnosed:false,condition:Math.max(15,100-faults.length*rand(7,14)),tuning:0,registered:!used,description:used?['Sõidab hästi, väiksed kasutusjäljed.','Müüja sõnul korralik, soovitatav üle vaadata.','Vajab veidi hoolt, hind vastav.','Hooldusajalugu osaline.'][rand(0,3)]:'Uhiuus esinduse auto',createdAt:now}}
+// v8 economy: same 5–20% target GROSS profit for ALL cars (cheap, luxury, new, used, military).
+// Basis includes purchase, transport, registration, diagnostics, repairs and tuning.
+// All NPC vehicle sales target 5–20% gross profit on verified total costs,
+// with a global maximum of 1.3 billion € profit per car. All cars, including military.
+// Real market value can prevent a profitable sale; NPCs never guarantee 5%.
+const AUTO_NPC_MAX_PROFIT=1_300_000_000;
+const AUTO_NPC_QUOTE_POLICY='all-cars-5-20-max-1.3b-v2';
+function autoNpcProfitCeiling(cost){
+ cost=Math.floor(Number(cost)||0);
+ if(!Number.isSafeInteger(cost)||cost<1)return 0;
+ return Math.min(AUTO_NPC_MAX_PROFIT,Math.floor(cost*.20));
+}
+function autoNpcFairValue(c){
+ const ideal=Math.max(1,Math.floor(autoIdealPrice(c)));
+ const cost=autoCostSummary(c).total;
+ if(!Number.isSafeInteger(cost)||cost<1)return 0; // Unknown cost: no safe NPC quote; avoid gifting money for imported/invalid cars
+ return Math.max(1,Math.min(ideal,cost+autoNpcProfitCeiling(cost)));
+}
+function autoNpcTargetOffer(c){
+ const cost=autoCostSummary(c).total;
+ const fair=autoNpcFairValue(c);
+ if(!Number.isSafeInteger(cost)||cost<=0||!Number.isSafeInteger(fair))return null;
+ const ceiling=autoNpcProfitCeiling(cost);
+ const minimum=Math.ceil(cost*1.05);
+ if(ceiling<minimum-cost||fair<minimum)return null; // No forced profit if market/cap cannot support 5%.
+ const rate=crypto.randomInt(5,21); // Random 5–20% offer; 1.3B absolute cap takes precedence.
+ const amount=Math.min(fair,cost+ceiling,Math.max(minimum,Math.floor(cost*(100+rate)/100)));
+ return {base:fair,amount,cost,profitPercent:Math.round((amount-cost)/cost*10000)/100,discount:Math.max(0,Math.round((1-amount/fair)*100))};
+}
+function autoNewCar(row,used=true,city){const now=Date.now(),year=used?rand(2003,2024):2026,age=2026-year,km=used?rand(20000,360000):0,base=row.base,price=used?Math.max(12000,Math.floor((base*2.25)*Math.max(.09,Math.pow(.915,age))*Math.max(.70,1-Math.max(0,km-50000)/1600000)*(.58+Math.random()*.32))):Math.floor(base*2);const faults=used?AUTO_FAULTS.filter(()=>Math.random()<(.10+age*.012)).map(([name,severity])=>({name,severity,repair:Math.max(1200,Math.floor(price*severity*(.5+Math.random())))})):[];return{id:crypto.randomUUID(),autoV2:true,name:`${row.brand} ${row.model}`,brand:row.brand,model:row.model,year,mileage:km+' km',km,city:city||AUTO_CITIES[rand(0,AUTO_CITIES.length-1)],buy:price,market:price,quality:used?'Kasutatud':'Uus',faults,diagnosed:false,condition:Math.max(15,100-faults.length*rand(7,14)),tuning:0,registered:!used,description:used?['Sõidab hästi, väiksed kasutusjäljed.','Müüja sõnul korralik, soovitatav üle vaadata.','Vajab veidi hoolt, hind vastav.','Hooldusajalugu osaline.'][rand(0,3)]:'Uhiuus esinduse auto',createdAt:now}}
 function autoTick(){
  const w=autoWorld(),now=Date.now();
  // Reprice unsold generated NPC listings once, retaining ids and hidden faults.
@@ -1233,8 +1722,10 @@ function autoTick(){
  const existingCount=w.used.length;
  w.used=w.used.filter(c=>!(Number(c.listingExpiresAt)>0&&now>=Number(c.listingExpiresAt)));
  if(w.used.length!==existingCount)marketChanged=true;
- // Seed an empty/new market with varied used cars; never clone the car that was sold.
- if(w.used.length<35){
+ // Fill the market once on first creation. Afterward, user purchases must NOT
+ // instantly replenish supply on every API call; only the scheduled 8–14m NPC rotation does.
+ // Prevents unlimited high-price car flipping via repeated buy -> instant restock -> sell.
+ if(!w.npcNext&&w.used.length<35){
   const missing=35-w.used.length;
   for(let i=0;i<missing;i++){
    const candidates=AUTO_BRANDS.filter(r=>!w.used.slice(-7).some(c=>c.brand===r.brand));
@@ -1294,20 +1785,19 @@ function autoErr(res,message){return res.status(400).json({error:message})}
 function autoAccountCredit(u,amount){autoState(u).balance+=Math.max(0,Math.floor(amount));}
 function autoAccountCanPay(a,cost){return Number.isSafeInteger(cost)&&cost>=0&&Number(a.balance)>=cost;}
 function autoHistory(u,message){const a=autoState(u);a.history.unshift({time:Date.now(),message});a.history=a.history.slice(0,40)}
-// v6.89: NPC teeb siduva pakkumise auto arvestuslikust turuvaartusest,
-// pidades laebiraeaekimisel kinni 0-15%. Pakutud summa ei soltu salajastest riketest.
-// Hind lukustub 5 minutiks, et nuppu korrates ei saaks parimat juhuarvu valida.
+// NPC quotes vary from 5–20% gross profit on total invested cost, market permitting.
+// The 5-minute lock prevents quote rerolling. No hidden-fault leakage in displayed quote.
 function autoNpcOffer(c){
- const now=Date.now(),existing=c.npcSaleOffer;
- if(existing&&Number.isSafeInteger(existing.amount)&&existing.amount>0&&existing.expiresAt>now&&existing.base===autoNpcFairValue(c))return existing;
- const base=autoNpcFairValue(c);
- const discount=crypto.randomInt(0,16); // 0..15 protsenti
- const amount=Math.max(1,Math.round(base*(100-discount)/100));
- c.npcSaleOffer={base,amount,discount,expiresAt:now+5*60000};
+ const now=Date.now(),existing=c.npcSaleOffer,cost=autoCostSummary(c).total,fair=autoNpcFairValue(c);
+ if(existing?.policy===AUTO_NPC_QUOTE_POLICY&&Number.isSafeInteger(existing.amount)&&existing.amount>=Math.ceil(cost*1.05)&&existing.amount<=fair&&existing.expiresAt>now&&existing.base===fair&&existing.cost===cost)return existing;
+ const next=autoNpcTargetOffer(c);
+ if(!next){delete c.npcSaleOffer;return null;}
+ c.npcSaleOffer={...next,policy:AUTO_NPC_QUOTE_POLICY,expiresAt:now+5*60000};
  return c.npcSaleOffer;
 }
 function autoSaleToNpc(u,c,offer){
- const a=autoState(u),price=offer.amount;
+ const a=autoState(u),price=Number(offer?.amount);
+ if(!Number.isSafeInteger(price)||price<1||price>autoNpcFairValue(c))return {error:'NPC pakkumine ületab kontrollitud turuhinda. Küsi uus pakkumine.'};
  const hidden=(c.faults||[]).some(f=>f.repair>0),deception=!!c.claimHealthy&&hidden,detected=deception&&Math.random()<.42;
  if(detected){
   const fine=Math.floor(price*(.25+Math.random()*1.25));
@@ -1332,10 +1822,12 @@ function autoSaleToNpc(u,c,offer){
 // NPC checks player-created used-car listings every 2–4 minutes. No invisible instant sales.
 function autoNpcListingsTick(){
  const now=Date.now();let changed=false;
- for(const u of Object.values(db.users||{}))for(const c of autoOwned(u)){
+ for(const u of Object.values(db.users||{}).filter(u=>!u.npc))for(const c of autoOwned(u)){
   const listing=c.autoListing;
   if(!listing||listing.status!=='active'||now<Number(listing.nextAt||0))continue;
-  const ideal=autoNpcFairValue(c), bid=Math.max(1,Math.round(ideal*(100-crypto.randomInt(0,16))/100));
+  const normalQuote=autoNpcTargetOffer(c);
+  // If the owner overpaid, an NPC may make a lower offer, but never invent a guaranteed 5% gain.
+  const ideal=autoNpcFairValue(c), bid=normalQuote?.amount||Math.max(1,Math.floor(ideal*.95));
   if(listing.ask<=bid){
    // Buyer accepts the seller's asking price, with possible hidden-defect penalties.
    const offer={amount:listing.ask,discount:Math.max(0,Math.round((1-listing.ask/ideal)*100))};
@@ -1368,6 +1860,7 @@ app.post('/api/auto-world/unlist',auth,(req,res)=>{
 app.post('/api/auto-world/accept-counter',auth,(req,res)=>{
  const u=req.user,c=autoOwned(u).find(x=>x.id===req.body.id),l=c?.autoListing;
  if(!c||l?.status!=='active'||!Number.isSafeInteger(l.counterOffer)||l.counterOffer<=0)return autoErr(res,'NPC kehtivat pakkumist ei leitud.');
+ if(l.counterOffer>autoNpcFairValue(c))return autoErr(res,'NPC vana vastupakkumine aegus. Oota uut pakkumist.');
  const amount=l.counterOffer;c.claimHealthy=!!l.claimHealthy;
  const result=autoSaleToNpc(u,c,{amount,discount:Math.max(0,Math.round((1-amount/autoNpcFairValue(c))*100))});
  if(result.error){delete c.autoListing;saveSoon();return res.status(400).json(result)}
@@ -1380,7 +1873,23 @@ app.get('/api/auto-world/leaderboard',auth,(req,res)=>{
  res.json({rows:rows.slice(0,100),asOf:Date.now(),note:'Müügi- ja kasumiarvestus algab v7.01-st; varasemaid teadmata tehinguid ei oletata.'});
 });
 app.get('/api/auto-world',auth,(req,res)=>{autoTick();const u=req.user,a=autoState(u),w=autoWorld();res.json({account:a,metrics:autoTradeMetrics(u),depositLimits:autoDepositStatus(a),capacity:autoSlots(u),occupied:autoOccupied(u),expansionPrices:{yard:autoExpansionPrice(a,'yard'),garage:autoExpansionPrice(a,'garage')},cities:AUTO_CITIES,used:w.used.map(c=>({...c,faults:undefined,condition:undefined,description:c.description,idealPrice:autoIdealPrice(c),registration:autoRegistration(c),transport:autoTransport(c.city,a.city)})),auctions:Object.values(w.auctions).map(x=>({brand:x.brand,end:x.end,starting:x.starting,top:x.bids.reduce((m,b)=>Math.max(m,b.amount),0),myBid:x.bids.find(b=>b.userId===u.id)?.amount||0,holder:byId(x.holder)?.name||'',mine:x.holder===u.id&&x.until>Date.now(),until:x.until,status:x.holder&&x.until>Date.now()?'contract':'auction',bids:[...x.bids].sort((a,b)=>b.amount-a.amount).map(b=>({name:byId(b.userId)?.name||'Endine mängija',amount:b.amount,time:b.time||0})),lastResult:x.lastResult||null})),owned:autoOwned(u).map(c=>({...c,costSummary:autoCostSummary(c),idealPrice:autoIdealPrice(c),diagnosticPrice:autoDiagnosticPrice(c),tuneOptions:autoTuneOptions(c),faults:c.diagnosed?c.faults:undefined})),brands:AUTO_BRANDS.flatMap(r=>autoDealerRows(r.brand)),militaryTenders:(w.militaryTenders||[]).map(t=>({id:t.id,car:{id:t.car.id,name:t.car.name,year:t.car.year,km:t.car.km,city:t.car.city,description:t.car.description,idealPrice:autoIdealPrice(t.car)},starting:t.starting,end:t.end,top:t.bids.reduce((m,b)=>Math.max(m,b.amount),0),bids:[...t.bids].sort((a,b)=>b.amount-a.amount).map(b=>({name:byId(b.userId)?.name||'Endine mängija',amount:b.amount,time:b.time})),myBid:t.bids.find(b=>b.userId===u.id)?.amount||0})),militaryTenderHistory:(w.militaryTenderHistory||[]).slice(0,8),now:Date.now()})});
-app.post('/api/auto-world/garage',auth,(req,res)=>{const u=req.user,a=autoState(u),city=String(req.body.city||'');if(a.city)return autoErr(res,'Garaaž on juba olemas.');if(!AUTO_CITIES.includes(city))return autoErr(res,'Vali Eesti linn.');const cost=300000;if(!autoAccountCanPay(a,cost))return autoErr(res,`Garaaži ostuks vaja ${cost} € autoäri kontol.`);a.balance-=cost;gameIncome(cost,'auto_garage_purchase',u);a.city=city;autoHistory(u,`Ostsid garaaži: ${city}.`);ok(res,u,{message:`Garaaž asub nüüd linnas ${city}. Õueplats 3 autot ja garaaž 1 auto.`})});
+app.post('/api/auto-world/garage',auth,(req,res)=>{
+ const u=req.user,a=autoState(u),city=String(req.body.city||'');
+ if(a.city)return autoErr(res,'Autoäri on juba avatud.');
+ if(!AUTO_CITIES.includes(city))return autoErr(res,'Vali Eesti linn.');
+ refresh(u);
+ if(u.turns<AUTO_OPEN_TURNS)return autoErr(res,'Autoäri avamiseks on vaja 200 käiku.');
+ if(u.cash<AUTO_OPEN_CASH)return autoErr(res,'Autoäri avamiseks on vaja 5 000 000 € isiklikus sularahas.');
+ // Kulu ja algkapital antakse vaid ÜHE eduka avamise käigus.
+ u.cash-=AUTO_OPEN_CASH;
+ u.turns-=AUTO_OPEN_TURNS;
+ a.city=city;
+ a.openedPaidV80=true;
+ gameIncome(AUTO_OPEN_CASH,'auto_business_opening_fee',u);
+ autoState(u); // lisab ühekordse 5M autoäri stardikapitali nüüd, kui linn on kinnitatud
+ autoHistory(u,`Avasid autoäri linnas ${city}. Avamistasu 5 000 000 € ja 200 käiku; autoäri stardikapital 5 000 000 €.`);
+ ok(res,u,{message:`Avasid autoäri linnas ${city}. Isiklikust sularahast 5 000 000 €, käikudest 200. Autoäri kontol ühekordne 5 000 000 € stardikapital. Õueplats 3 autot ja garaaž 1 auto.`});
+});
 app.post('/api/auto-world/expand',auth,(req,res)=>{const u=req.user,a=autoState(u),type=String(req.body.type||'');if(!a.city)return autoErr(res,'Osta esmalt garaaž.');if(!['yard','garage'].includes(type))return autoErr(res,'Vigane laiendus.');const current=a[type],cost=autoExpansionPrice(a,type);if(!autoAccountCanPay(a,cost))return autoErr(res,`Laiendus maksab ${cost} € autoäri kontolt.`);a.balance-=cost;gameIncome(cost,'auto_garage_expansion',u);a[type]++;ok(res,u,{message:`Laiendus valmis! ${type==='yard'?'Õueplatsi':'Garaaži'} kohti: ${a[type]}. Maksis ${cost} €.`})});
 app.post('/api/auto-world/bank',auth,(req,res)=>{
  const u=req.user,a=autoState(u),raw=Number(req.body.amount),amount=raw;
@@ -1389,18 +1898,18 @@ app.post('/api/auto-world/bank',auth,(req,res)=>{
  if(req.body.dir==='in'){
   const limits=autoDepositStatus(a);
   if(amount<limits.min||amount>limits.maxSingle)return autoErr(res,'Ühe sissemakse summa peab olema 100 000–10 000 000 €.');
-  if(limits.remainingCount<1)return autoErr(res,'Viimase 24 tunni jooksul on 3 sissemakset juba tehtud.');
-  if(amount>limits.remaining24h)return autoErr(res,`24 tunni sissemaksete limiidist alles ${limits.remaining24h} €.`);
+  
+  
   refresh(u);
-  if(u.turns<AUTO_DEPOSIT_TURNS)return autoErr(res,'Sissemakse tegemiseks on vaja 200 käiku.');
+  if(u.turns<AUTO_DEPOSIT_TURNS)return autoErr(res,'Sissemakse tegemiseks on vaja 3000 käiku.');
   if(u.cash<amount)return autoErr(res,'Isiklikus sularahas pole piisavalt raha.');
   // Kontrollid enne muutmist; raha liigub vaid mängija kontode vahel, Keskpanka ei lisandu.
   u.cash-=amount;
   u.turns-=AUTO_DEPOSIT_TURNS;
   a.balance+=amount;
   a.capitalDeposits.push({time:Date.now(),amount});
-  autoHistory(u,`Kapitalisissemakse isiklikust sularahast: ${amount} €; kasutatud 200 käiku.`);
-  return ok(res,u,{message:`Autoäri kontole lisatud ${amount} €. Kulus 200 käiku. 24 h jooksul veel ${AUTO_DEPOSIT_MAX_DAY-autoDepositStatus(a).used24h} € limiiti.`});
+  autoHistory(u,`Kapitalisissemakse isiklikust sularahast: ${amount} €; kasutatud 3000 käiku.`);
+  return ok(res,u,{message:`Autoäri kontole lisatud ${amount} €. Kulus 3000 käiku. Ajaline sissemaksete piirang puudub.`});
  }
  if(req.body.dir==='out'){
   if(a.balance<amount)return autoErr(res,'Autoäri kontol pole piisavalt raha.');
@@ -1426,7 +1935,7 @@ app.post('/api/auto-world/military-bid',auth,(req,res)=>{
  ok(res,u,{message:`Sõjaväetehnika hanke pakkumine ${amount} € esitatud. Raha broneeritud autoäri kontolt.`});
 });
 app.post('/api/auto-world/bid',auth,(req,res)=>{autoTick();const u=req.user,a=autoState(u),w=autoWorld(),brand=String(req.body.brand||''),auction=w.auctions[brand],amount=Math.floor(Number(req.body.amount));if(!a.city)return autoErr(res,'Esinduslepingu pakkumiseks on vaja garaaži.');if(!auction||auction.holder&&auction.until>Date.now())return autoErr(res,'Selle margi esindusleping on juba välja antud. Uus oksjon algab pärast lepingu lõppu.');if(Date.now()>=auction.end)return autoErr(res,'Oksjon lõppenud.');if(!Number.isSafeInteger(amount)||amount<auction.starting||amount<=auction.bids.reduce((m,b)=>Math.max(m,b.amount),0))return autoErr(res,'Pakkumine peab ületama senise kõrgeima pakkumise ja alghinna.');const prev=auction.bids.find(x=>x.userId===u.id);const legacy=!!prev&&prev.source!=='autoTrade';const diff=legacy?amount:amount-(prev?.amount||0);if(!autoAccountCanPay(a,diff))return autoErr(res,'Autoäri kontol pole pakkumise broneerimiseks piisavalt raha.');a.balance-=diff;if(legacy)u.cash+=prev.amount;if(prev){prev.amount=amount;prev.time=Date.now();prev.source='autoTrade'}else auction.bids.push({userId:u.id,amount,time:Date.now(),source:'autoTrade'});ok(res,u,{message:`Pakkumine ${amount} € esitatud. Raha broneeritud autoäri kontolt oksjoni lõpuni.`})});
-app.post('/api/auto-world/buy',auth,(req,res)=>{autoTick();const u=req.user,a=autoState(u),w=autoWorld();if(!a.city)return autoErr(res,'Osta esmalt garaaž.');if(autoOccupied(u)>=autoSlots(u))return autoErr(res,'Kõik hoiuplatsid on täis. Laienda pinda või müü auto.');let c,cost,registration=0,transport=0;if(req.body.kind==='used'){const idx=w.used.findIndex(x=>x.id===req.body.id);if(idx<0)return autoErr(res,'Auto on juba müüdud.');c=w.used[idx];registration=autoRegistration(c);transport=autoTransport(c.city,a.city);cost=c.market+registration+transport;if(!autoAccountCanPay(a,cost))return autoErr(res,`Ostuks koos registreerimise ja transpordiga vaja ${cost} € autoäri kontol.`);w.used.splice(idx,1);c.registered=true;c.city=a.city}else if(req.body.kind==='new'){const row=autoDealerRows(String(req.body.brand||'')).find(x=>x.model===req.body.model),auction=w.auctions[req.body.brand];if(!row||!auction||auction.holder!==u.id||auction.until<Date.now())return autoErr(res,'Selle margi kehtiv esindusleping puudub.');c=autoNewCar(row,false,a.city);cost=row.newDealerCost;c.market=cost;c.buy=cost;if(!autoAccountCanPay(a,cost))return autoErr(res,`Uus auto maksab ${cost} € autoäri kontolt.`)}else return autoErr(res,'Vigane auto.');a.balance-=cost;gameIncome(cost,'auto_purchase',u);c.autoCosts={purchase:cost-registration-transport,transport,registration,diagnostics:0,repairs:0,tuning:0,complete:true};u.cars.push(c);autoHistory(u,`Ostetud ${c.name}: ${cost} € (transport ${transport}, registreerimine ${registration}).`);ok(res,u,{message:`Ostsid ${c.name}. Kokku ${cost} €; transport ${transport} €, registreerimine ${registration} €.`})});
+app.post('/api/auto-world/buy',auth,(req,res)=>{autoTick();const u=req.user,a=autoState(u),w=autoWorld();if(!a.city)return autoErr(res,'Osta esmalt garaaž.');if(autoOccupied(u)>=autoSlots(u))return autoErr(res,'Kõik hoiuplatsid on täis. Laienda pinda või müü auto.');if(u.turns<AUTO_PURCHASE_TURNS)return autoErr(res,'Auto ostmiseks on vaja 5 käiku.');let c,cost,registration=0,transport=0;if(req.body.kind==='used'){const idx=w.used.findIndex(x=>x.id===req.body.id);if(idx<0)return autoErr(res,'Auto on juba müüdud.');c=w.used[idx];registration=autoRegistration(c);transport=autoTransport(c.city,a.city);cost=c.market+registration+transport;if(!autoAccountCanPay(a,cost))return autoErr(res,`Ostuks koos registreerimise ja transpordiga vaja ${cost} € autoäri kontol.`);w.used.splice(idx,1);c.registered=true;c.city=a.city}else if(req.body.kind==='new'){const row=autoDealerRows(String(req.body.brand||'')).find(x=>x.model===req.body.model),auction=w.auctions[req.body.brand];if(!row||!auction||auction.holder!==u.id||auction.until<Date.now())return autoErr(res,'Selle margi kehtiv esindusleping puudub.');c=autoNewCar(row,false,a.city);cost=row.newDealerCost;c.market=cost;c.buy=cost;if(!autoAccountCanPay(a,cost))return autoErr(res,`Uus auto maksab ${cost} € autoäri kontolt.`)}else return autoErr(res,'Vigane auto.');if(!needTurns(u,AUTO_PURCHASE_TURNS))return autoErr(res,'Auto ostmiseks on vaja 5 käiku.');a.balance-=cost;gameIncome(cost,'auto_purchase',u);c.autoCosts={purchase:cost-registration-transport,transport,registration,diagnostics:0,repairs:0,tuning:0,complete:true};u.cars.push(c);autoHistory(u,`Ostetud ${c.name}: ${cost} € (transport ${transport}, registreerimine ${registration}).`);ok(res,u,{message:`Ostsid ${c.name}. Kokku ${cost} €; transport ${transport} €, registreerimine ${registration} €.`})});
 app.post('/api/auto-world/diagnose',auth,(req,res)=>{const u=req.user,a=autoState(u),c=u.cars.find(x=>x.id===req.body.id&&x.autoV2);if(!c)return autoErr(res,'Auto puudub.');const price=autoDiagnosticPrice(c);if(a.balance<price)return autoErr(res,`Diagnostikaks on vaja ${price} € autoäri kontol.`);a.balance-=price;gameIncome(price,'auto_diagnostics',u);autoAddCost(c,'diagnostics',price);c.diagnosed=true;ok(res,u,{message:(c.faults||[]).length?`Diagnostika valmis: ${c.faults.map(f=>f.name).join(', ')}.`:'Diagnostika ei tuvastanud vigu.'})});
 app.post('/api/auto-world/repair',auth,(req,res)=>{const u=req.user,a=autoState(u),c=u.cars.find(x=>x.id===req.body.id&&x.autoV2);if(!c||!c.diagnosed)return autoErr(res,'Enne remonti on vajalik diagnostika.');const fault=(c.faults||[]).find(x=>x.name===req.body.fault&&x.repair>0);if(!fault)return autoErr(res,'Rike puudub või juba remonditud.');const repairCost=fault.repair;if(a.balance<repairCost)return autoErr(res,'Remondiks pole autoäri kontol piisavalt raha.');a.balance-=repairCost;gameIncome(repairCost,'auto_repair',u);autoAddCost(c,'repairs',repairCost);c.market+=Math.floor(repairCost*.8);c.condition=Math.min(100,c.condition+12);fault.repair=0;ok(res,u,{message:`Remonditud: ${fault.name}, kulu ${repairCost} €.`})});
 app.post('/api/auto-world/tune',auth,(req,res)=>{
@@ -1448,15 +1957,15 @@ app.post('/api/auto-world/tune',auth,(req,res)=>{
  autoHistory(u,`Tuunitud ${c.name}: ${selected.map(x=>x.name).join(', ')}. Kulu ${cost} €.`);
  ok(res,u,{message:`Paigaldati ${ids.length} tuuningut: ${selected.map(x=>x.name).join(', ')}. Kulu ${cost} €. Auto arvestuslik väärtus suurenes ${valueIncrease} €.`});
 });
-app.post('/api/auto-world/offer',auth,(req,res)=>{const u=req.user,c=u.cars.find(x=>x.id===req.body.id&&x.autoV2);if(!c)return autoErr(res,'Auto puudub.');if(c.autoListing?.status==='active')return autoErr(res,'Eemalda esmalt müügikuulutus.');const offer=autoNpcOffer(c);saveSoon();res.json({ok:true,offer:{amount:offer.amount,base:offer.base,discount:offer.discount,expiresAt:offer.expiresAt},car:c.name})});
-app.post('/api/auto-world/sell',auth,(req,res)=>{const u=req.user,c=u.cars.find(x=>x.id===req.body.id&&x.autoV2);if(!c)return autoErr(res,'Auto puudub.');const offer=c.npcSaleOffer;if(!offer||offer.expiresAt<=Date.now()||offer.base!==autoNpcFairValue(c))return autoErr(res,'NPC pakkumine aegus või auto väärtus muutus. Küsi uus pakkumine.');c.claimHealthy=!!req.body.claimHealthy;const result=autoSaleToNpc(u,c,offer);if(result.error){saveSoon();return res.status(400).json(result)}ok(res,u,result)});
+app.post('/api/auto-world/offer',auth,(req,res)=>{const u=req.user,c=u.cars.find(x=>x.id===req.body.id&&x.autoV2);if(!c)return autoErr(res,'Auto puudub.');if(c.autoListing?.status==='active')return autoErr(res,'Eemalda esmalt müügikuulutus.');const offer=autoNpcOffer(c);if(!offer)return autoErr(res,'NPC ei tee hetkel sellele autole 5–20% kasumiga pakkumist: auto turuväärtus jääb kogukulule alla. Võid ise kuulutuse lisada.');saveSoon();res.json({ok:true,offer:{amount:offer.amount,base:offer.base,cost:offer.cost,profitPercent:offer.profitPercent,discount:offer.discount,expiresAt:offer.expiresAt},car:c.name})});
+app.post('/api/auto-world/sell',auth,(req,res)=>{const u=req.user,c=u.cars.find(x=>x.id===req.body.id&&x.autoV2);if(!c)return autoErr(res,'Auto puudub.');const offer=c.npcSaleOffer;if(!offer||offer.policy!==AUTO_NPC_QUOTE_POLICY||offer.expiresAt<=Date.now()||offer.base!==autoNpcFairValue(c)||offer.cost!==autoCostSummary(c).total)return autoErr(res,'NPC pakkumine aegus või auto väärtus muutus. Küsi uus pakkumine.');c.claimHealthy=!!req.body.claimHealthy;const result=autoSaleToNpc(u,c,offer);if(result.error){saveSoon();return res.status(400).json(result)}ok(res,u,result)});
 
 app.post('/api/car/license',auth,(req,res)=>{const u=req.user,l=CAR_LICENSES.find(x=>x.level===u.carLicense+1);if(!l)return res.status(400).json({error:'Kõik litsentsid olemas.'});const lc=Math.floor(l.cost*market());if(u.cash<lc)return res.status(400).json({error:`Vaja ${lc} €.`});u.cash-=lc;gameIncome(lc,'car_license',u);u.carLicense++;ok(res,u,{message:`Litsents: ${l.name}`})});
-app.post('/api/car/buy',auth,(req,res)=>{const u=req.user,l=CAR_LICENSES.find(x=>x.level===u.carLicense);if(!l)return res.status(400).json({error:'Vaja autolitsentsi.'});const opt=(CAR_OPTIONS[u.carLicense]||[]).find(x=>x.id===String(req.body.option||''));if(!opt)return res.status(400).json({error:'Vali, millist autot soovid osta.'});const shopFactor=clamp(Number(db.settings.carMarket||1),.95,1.05);const buy=Math.floor(opt.price*shopFactor);const marketValue=Math.floor(buy*(1.10+Math.random()*.15));db.settings.marketPressure+=2;if(u.cash<buy)return res.status(400).json({error:'Raha puudub.'});u.cash-=buy;gameIncome(buy,'car_purchase',u);u.cars.push({id:crypto.randomUUID(),name:opt.name,brand:opt.brand,model:opt.model,engine:opt.engine,power:opt.power,year:opt.year,mileage:opt.mileage,fuel:opt.fuel,drivetrain:opt.drivetrain,quality:opt.quality,buy,market:marketValue});ok(res,u,{message:`Ostsid: ${opt.name} ${buy} € eest. Auto ost ei kuluta käike. Turuväärtus ~${marketValue} €.`})});
+app.post('/api/car/buy',auth,(req,res)=>{const u=req.user,l=CAR_LICENSES.find(x=>x.level===u.carLicense);if(!l)return res.status(400).json({error:'Vaja autolitsentsi.'});const opt=(CAR_OPTIONS[u.carLicense]||[]).find(x=>x.id===String(req.body.option||''));if(!opt)return res.status(400).json({error:'Vali, millist autot soovid osta.'});const shopFactor=clamp(Number(db.settings.carMarket||1),.95,1.05);const buy=Math.floor(opt.price*shopFactor);const marketValue=Math.floor(buy*(1.10+Math.random()*.15));if(u.cash<buy)return res.status(400).json({error:'Raha puudub.'});if(!needTurns(u,AUTO_PURCHASE_TURNS))return res.status(400).json({error:'Auto ostmiseks on vaja 5 käiku.'});db.settings.marketPressure+=2;u.cash-=buy;gameIncome(buy,'car_purchase',u);u.cars.push({id:crypto.randomUUID(),name:opt.name,brand:opt.brand,model:opt.model,engine:opt.engine,power:opt.power,year:opt.year,mileage:opt.mileage,fuel:opt.fuel,drivetrain:opt.drivetrain,quality:opt.quality,buy,market:marketValue});ok(res,u,{message:`Ostsid: ${opt.name} ${buy} € eest. Auto ost maksis 5 käiku. Turuväärtus ~${marketValue} €.`})});
 app.post('/api/car/list',auth,(req,res)=>{const u=req.user,c=u.cars.find(x=>x.id===req.body.id),price=Math.floor(+req.body.price||0);if(!c||price<=0)return res.status(400).json({error:'Vigane auto/hind.'});const id=String(db.nextIds.listing++),now=Date.now();db.carListings[id]={id,seller:u.id,car:c,price,time:now,npcActionAt:now+rand(2,15)*60000,npcOffer:0,npcOfferAt:0};u.cars=u.cars.filter(x=>x.id!==c.id);ok(res,u,{message:'Auto pandi turule. NPC kontrollib kuulutust hiljemalt 15 minuti jooksul.'})});
 app.get('/api/car/market',auth,(req,res)=>res.json({listings:Object.values(db.carListings).map(l=>({...l,sellerName:byId(l.seller)?.name||'?',mine:l.seller===req.user.id}))}));
-app.post('/api/car/buy-market',auth,(req,res)=>{const u=req.user,l=db.carListings[req.body.id];if(!l)return res.status(404).json({error:'Kuulutus puudub.'});if(l.seller===u.id)return res.status(400).json({error:'Enda autot ei saa osta.'});if(u.cash<l.price)return res.status(400).json({error:'Raha puudub.'});const seller=byId(l.seller);if(!seller)return res.status(404).json({error:'Müüjat pole.'});const feeRate=clamp(Number(db.settings.carSaleFee??.08),0,.25),fee=Math.floor(l.price*feeRate);u.cash-=l.price;creditBankFirst(seller,l.price-fee);gameIncome(fee,'car_market_fee',seller);u.cars.push(l.car);delete db.carListings[l.id];ok(res,u,{message:`Ostsid auto ${l.price} € eest.`})});
-app.post('/api/car/npc-offer/accept',auth,(req,res)=>{const u=req.user,l=db.carListings[req.body.id];if(!l||l.seller!==u.id)return res.status(404).json({error:'Kuulutust pole.'});const offer=Math.floor(l.npcOffer||0);if(offer<=0)return res.status(400).json({error:'NPC pakkumist pole.'});const feeRate=clamp(Number(db.settings.carSaleFee??.08),0,.25),fee=Math.floor(offer*feeRate),credit=creditBankFirst(u,offer-fee);gameIncome(fee,'npc_car_market_fee',u);delete db.carListings[l.id];ok(res,u,{message:`Võtsid NPC pakkumise vastu: ${offer} €. Teenustasu ${fee} €. Panka ${credit.toBank} €${credit.toCash?`, sularahasse ${credit.toCash} €`:''}.`})});
+app.post('/api/car/buy-market',auth,(req,res)=>{const u=req.user,l=db.carListings[req.body.id];if(!l)return res.status(404).json({error:'Kuulutus puudub.'});if(l.seller===u.id)return res.status(400).json({error:'Enda autot ei saa osta.'});if(!Number.isSafeInteger(Number(l.price))||l.price<=0)return res.status(400).json({error:'Kuulutuse hind on vigane.'});if(u.cash<l.price)return res.status(400).json({error:'Raha puudub.'});const seller=byId(l.seller);if(!seller)return res.status(404).json({error:'Müüjat pole.'});if(u.turns<AUTO_PURCHASE_TURNS)return res.status(400).json({error:'Auto ostmiseks on vaja 5 käiku.'});if(!needTurns(u,AUTO_PURCHASE_TURNS))return res.status(400).json({error:'Auto ostmiseks on vaja 5 käiku.'});const feeRate=clamp(Number(db.settings.carSaleFee??.08),0,.25),fee=Math.floor(l.price*feeRate);u.cash-=l.price;creditBankFirst(seller,l.price-fee);gameIncome(fee,'car_market_fee',seller);u.cars.push(l.car);delete db.carListings[l.id];ok(res,u,{message:`Ostsid auto ${l.price} € eest. -5 käiku.`})});
+app.post('/api/car/npc-offer/accept',auth,(req,res)=>{const u=req.user,l=db.carListings[req.body.id];if(!l||l.seller!==u.id)return res.status(404).json({error:'Kuulutust pole.'});const offer=Math.floor(l.npcOffer||0);if(offer<=0)return res.status(400).json({error:'NPC pakkumist pole.'});if(offer>legacyNpcFairValue(l.car))return res.status(400).json({error:'NPC vana pakkumine aegus. Oota uut pakkumist.'});const feeRate=clamp(Number(db.settings.carSaleFee??.08),0,.25),fee=Math.floor(offer*feeRate),credit=creditBankFirst(u,offer-fee);gameIncome(fee,'npc_car_market_fee',u);delete db.carListings[l.id];ok(res,u,{message:`Võtsid NPC pakkumise vastu: ${offer} €. Teenustasu ${fee} €. Panka ${credit.toBank} €${credit.toCash?`, sularahasse ${credit.toCash} €`:''}.`})});
 app.post('/api/car/npc-offer/reject',auth,(req,res)=>{const u=req.user,l=db.carListings[req.body.id];if(!l||l.seller!==u.id)return res.status(404).json({error:'Kuulutust pole.'});l.npcOffer=0;l.npcOfferAt=0;l.npcActionAt=Date.now()+rand(2,15)*60000;ok(res,u,{message:'NPC pakkumine tagasi lükatud. NPC vaatab kuulutuse uuesti kuni 15 minuti jooksul.'})});
 app.post('/api/car/cancel-listing',auth,(req,res)=>{const u=req.user,l=db.carListings[req.body.id];if(!l||l.seller!==u.id)return res.status(404).json({error:'Kuulutust pole.'});u.cars.push(l.car);delete db.carListings[l.id];ok(res,u,{message:'Kuulutus eemaldatud ja auto tagastatud garaaži.'})});
 function updateCrypto(){if(Date.now()<db.settings.cryptoNext)return;const mid=(db.settings.cryptoMin+db.settings.cryptoMax)/2,drift=(mid-db.settings.cryptoPrice)*.18,noise=rand(-22,22);db.settings.cryptoPrice=clamp(Math.round(db.settings.cryptoPrice+drift+noise),db.settings.cryptoMin,db.settings.cryptoMax);db.settings.cryptoNext=Date.now()+900000;io.emit('settings',db.settings);saveSoon()}
@@ -1469,7 +1978,44 @@ app.post('/api/nightlife/alert-delete',auth,nightlifeGate,(req,res)=>{const u=re
 app.post('/api/nightlife/alerts-clear',auth,nightlifeGate,(req,res)=>{const u=req.user,v=nightVenue(u,req.body.venueId);if(!v)return res.status(404).json({error:'Kohta pole.'});nightNormalizeVenue(v);v.alerts=[];ok(res,u,{message:'Kõik ööelu teavitused eemaldatud.'})});
 app.post('/api/nightlife/create',auth,nightlifeGate,(req,res)=>{const u=req.user,n=nightlifeState(u),type=String(req.body.type||''),t=NIGHT_TYPES[type],pr=NIGHT_PREMISES.find(x=>x.id===String(req.body.premiseId||''));if(!t||!pr)return res.status(400).json({error:'Vali koha tüüp ja pind.'});if(n.venues.some(v=>v.type===type))return res.status(400).json({error:`Sul on ${t.name} juba olemas. Iga tüüp on eraldi.`});if(n.venues.length>=3)return res.status(400).json({error:'Sul võib olla kuni 3 ööelukohta.'});if(u.cash<pr.cost)return res.status(400).json({error:`Pinna jaoks on vaja ${pr.cost} € sularaha.`});u.cash-=pr.cost;gameIncome(pr.cost,'nightlife_premise_purchase',u);const id=String(n.nextVenueId++),name=String(req.body.name||`${t.name} ${id}`).trim().slice(0,36)||`${t.name} ${id}`;n.venues.push(nightNormalizeVenue({id,type,name,premiseId:pr.id,premiseName:pr.name,city:pr.city,area:pr.area,baseArea:pr.area,extraArea:0,premiseCost:pr.cost,constructionStatus:'none',constructionDoneAt:0,inventory:{},itemCondition:{},staff:[],offers:{},suppliers:{},securityContract:null,entryFee:type==='bar'?0:type==='club'?25000:35000,open:false,ready:false,accountOpen:false,account:0,blackCash:0,blackStock:{ant:0,kok:0,jupp:0},heat:0,reputation:5,totalRevenue:0,totalVisitors:0,lastVisitors:0,lastRevenueAt:Date.now(),windowStart:Date.now(),usedOpenMs:0,declarations:[],createdAt:Date.now()}));ok(res,u,{message:`Lõid koha: ${name}. Ava järgmise sammuna 200⚡ eest ettevõtte pangakonto.`})});
 app.post('/api/nightlife/bank-open',auth,nightlifeGate,(req,res)=>{const u=req.user,v=nightVenue(u,req.body.venueId);if(!v)return res.status(404).json({error:'Kohta pole.'});nightNormalizeVenue(v);if(v.accountOpen)return res.status(400).json({error:'Pangakonto on juba avatud.'});if(!needTurns(u,200))return res.status(400).json({error:'Pangakonto avamiseks on vaja 200 käiku.'});v.accountOpen=true;ok(res,u,{message:'Ettevõtte pangakonto avatud. Maksumus 200 käiku.'})});
-app.post('/api/nightlife/bank-move',auth,nightlifeGate,(req,res)=>{const u=req.user,v=nightVenue(u,req.body.venueId),dir=String(req.body.dir||''),amount=Math.max(1,Math.floor(Number(req.body.amount)||0));if(!v)return res.status(404).json({error:'Kohta pole.'});nightNormalizeVenue(v);if(!v.accountOpen)return res.status(400).json({error:'Ava kõigepealt koha pangakonto.'});if(dir==='in'){const src=String(req.body.source||'cash');if(src==='bank'){if(u.bank<amount)return res.status(400).json({error:'Isiklikul pangakontol pole piisavalt raha.'});u.bank-=amount}else{if(u.cash<amount)return res.status(400).json({error:'Sularaha pole piisavalt.'});u.cash-=amount}v.account+=amount;return ok(res,u,{message:`Kandsid koha kontole ${amount} €.`})}if(dir==='out'){if(v.account<amount)return res.status(400).json({error:'Koha kontol pole piisavalt raha.'});const fee=Math.floor(amount*NIGHT_WITHDRAW_FEE),net=amount-fee;v.account-=amount;gameIncome(fee,'nightlife_withdraw_fee',u);const c=creditBankFirst(u,net);return ok(res,u,{message:`Võtsid välja ${amount} €. 8% tasu ${fee} €, sulle ${net} € (panka ${c.toBank} €).`})}return res.status(400).json({error:'Vigane suund.'})});
+// Every nightclub account transfer carries a stable request ID. A retried request
+// must not debit or credit a second time (the receipt lives in the game snapshot).
+// This is replay protection, NOT a substitute for database transactional persistence.
+app.post('/api/nightlife/bank-move',auth,nightlifeGate,(req,res)=>{
+ const u=req.user,v=nightVenue(u,req.body.venueId),dir=String(req.body.dir||''),
+  rawAmount=Number(req.body.amount),source=String(req.body.source||'cash'),
+  transactionId=String(req.body.transactionId||'');
+ if(!v)return res.status(404).json({error:'Kohta pole.'});
+ nightNormalizeVenue(v);
+ if(!v.accountOpen)return res.status(400).json({error:'Ava kõigepealt koha pangakonto.'});
+ if(!Number.isSafeInteger(rawAmount)||rawAmount<1)return res.status(400).json({error:'Sisesta korrektne summa.'});
+ if(!/^[a-zA-Z0-9_-]{12,90}$/.test(transactionId))return res.status(400).json({error:'Tehingu identifikaator puudub või on vigane. Laadi mäng uuesti.'});
+ if(!['in','out'].includes(dir)||(dir==='in'&&!['cash','bank'].includes(source)))return res.status(400).json({error:'Vigane suund või lähtekonto.'});
+ const fingerprint=[dir,rawAmount,dir==='in'?source:''].join('|');
+ if(!Array.isArray(v.bankMoveReceipts))v.bankMoveReceipts=[];
+ const prior=v.bankMoveReceipts.find(x=>x.id===transactionId);
+ if(prior){if(prior.fingerprint!==fingerprint)return res.status(409).json({error:'Sama tehingu ID-ga proovitakse erinevat summat või suunda.'});
+  return res.json({ok:true,replayed:true,message:prior.message,user:pub(u)});}
+ if(u.turns<1000)return res.status(400).json({error:'Raha liigutamiseks on vaja 1000 käiku.'});
+ if(!Number.isSafeInteger(Number(v.account)))return res.status(400).json({error:'Koha kontol on vigane saldo.'});
+ let message;
+ if(dir==='in'){
+  if(source==='bank'&&u.bank<rawAmount)return res.status(400).json({error:'Isiklikul pangakontol pole piisavalt raha.'});
+  if(source==='cash'&&u.cash<rawAmount)return res.status(400).json({error:'Sularaha pole piisavalt.'});
+  if(!Number.isSafeInteger(v.account+rawAmount))return res.status(400).json({error:'Koha konto limiit ületatud.'});
+  u.turns-=1000;u[source]-=rawAmount;v.account+=rawAmount;
+  message=`Kandsid koha kontole ${rawAmount} €. Kulus 1000 käiku.`;
+ }else{
+  if(v.account<rawAmount)return res.status(400).json({error:'Koha kontol pole piisavalt raha.'});
+  const fee=Math.floor(rawAmount*NIGHT_WITHDRAW_FEE),net=rawAmount-fee;
+  u.turns-=1000;v.account-=rawAmount;gameIncome(fee,'nightlife_withdraw_fee',u);
+  const c=creditBankFirst(u,net);
+  message=`Võtsid välja ${rawAmount} €. 8% tasu ${fee} €, 1000 käiku, sulle ${net} € (panka ${c.toBank} €).`;
+ }
+ v.bankMoveReceipts.unshift({id:transactionId,fingerprint,message,time:Date.now()});
+ v.bankMoveReceipts=v.bankMoveReceipts.slice(0,300);
+ ok(res,u,{message});
+});
 app.post('/api/nightlife/tender',auth,nightlifeGate,(req,res)=>{const u=req.user,v=nightVenue(u,req.body.venueId);if(!v)return res.status(404).json({error:'Kohta pole.'});nightNormalizeVenue(v);const kind=String(req.body.kind||'');v.offers=v.offers||{};if(kind==='construction'){if(v.constructionStatus==='building')return res.status(400).json({error:'Ehitus juba käib. Oota, kuni see valmis saab.'});if(v.constructionStatus==='done')return res.status(400).json({error:'See koht on juba valmis ehitatud. Uut ehitushanget pole vaja.'});v.offers.construction=nightConstructionOffers(v)}else if(kind==='security')v.offers.security=nightSecurityOffers(v);else if(kind==='alcohol'||kind==='food')v.offers[kind]=nightSupplierOffers(v,kind);else if(kind==='staff'){const role=String(req.body.role||'bartender');if(!['bartender','server','dj','dancer','performer','cleaner','hostess','kitchen'].includes(role))return res.status(400).json({error:'Vigane amet.'});if(role==='performer'&&v.type!=='strip')return res.status(400).json({error:'Esinejate konkurss on striptiisiklubile.'});v.offers.staff=nightStaffApps(v,role)}else return res.status(400).json({error:'Vigane hange.'});ok(res,u,{message:'Uued NPC pakkumised saabusid. Hinnad ja kvaliteet muutuvad iga hanke korral.'})});
 app.post('/api/nightlife/offers/clear',auth,nightlifeGate,(req,res)=>{const u=req.user,v=nightVenue(u,req.body.venueId);if(!v)return res.status(404).json({error:'Kohta pole.'});nightNormalizeVenue(v);const kind=String(req.body.kind||'');if(!['construction','security','alcohol','food','staff'].includes(kind))return res.status(400).json({error:'Vigane pakkumiste tüüp.'});v.offers=v.offers||{};v.offers[kind]=[];ok(res,u,{message:'Pakkumised suleti.'})});
 app.post('/api/nightlife/accept',auth,nightlifeGate,(req,res)=>{const u=req.user,v=nightVenue(u,req.body.venueId);if(!v)return res.status(404).json({error:'Kohta pole.'});nightNormalizeVenue(v);const kind=String(req.body.kind||''),list=v.offers?.[kind]||[],o=list.find(x=>x.id===String(req.body.offerId||''));if(!o)return res.status(400).json({error:'Pakkumist pole.'});let cost=0;if(kind==='construction')cost=o.price;else if(kind==='security')cost=o.total;else if(kind==='alcohol'||kind==='food')cost=o.setup;else return res.status(400).json({error:'Seda pakkumist ei saa nii kinnitada.'});const ch=nightCharge(v,cost,kind==='construction'?'Ehitus':kind==='security'?`Turva ${Number(o.hours||12)}h pakett`:`Tarnija ${Number(o.hours||12)}h leping`,kind==='security'?null:'other',u);if(!ch.ok)return res.status(400).json({error:ch.error});if(kind==='construction'){if(v.constructionStatus==='building')return res.status(400).json({error:'Ehitus juba käib.'});if(v.constructionStatus==='done')return res.status(400).json({error:'Koht on juba valmis ehitatud.'});v.builder=o;v.constructionStatus='building';v.constructionDoneAt=Date.now()+o.minutes*60000;v.reputation=clamp(v.reputation+Math.floor(o.quality/25),0,100)}else if(kind==='security'){v.securityContract={...o,remainingHours:Number(o.hours||12),remainingMs:Number(o.hours||12)*3600000,startedAt:Date.now()}}else{v.suppliers[kind]={...o,selected:true,hours:Number(o.hours||12),startedAt:Date.now(),until:Date.now()+Number(o.hours||12)*3600000}}v.offers[kind]=[];v.ready=nightReady(v);ok(res,u,{message:'Pakkumine kinnitatud ja raha võeti koha kontolt.'})});
@@ -1490,10 +2036,10 @@ app.post('/api/nightlife/black-sell',auth,nightlifeGate,(req,res)=>{const u=req.
 app.post('/api/nightlife/close-business',auth,nightlifeGate,(req,res)=>{const u=req.user,n=nightlifeState(u),v=nightVenue(u,req.body.venueId);if(!v)return res.status(404).json({error:'Kohta pole.'});refreshNightlife(u);if(v.open)return res.status(400).json({error:'Sulge koht enne tavaliselt.'});if(nightPendingTaxes(v)>0)return res.status(400).json({error:'Esita enne kõik lukustatud deklaratsioonid.'});const payout=Math.max(0,Math.floor(v.account||0)),fee=Math.floor(payout*NIGHT_WITHDRAW_FEE),net=payout-fee;if(net>0)creditBankFirst(u,net);if(fee>0)gameIncome(fee,'nightlife_close_fee',u);n.venues=n.venues.filter(x=>x!==v);ok(res,u,{message:`Ettevõte suleti jäädavalt. Konto jäägist ${net} € kanti sulle pärast 8% tasu.`})});
 app.get('/api/admin/nightlife-book',auth,admin,(req,res)=>{res.json({passwordRequired:false,rules:{tax:'24% iga lukustatud tunni brutotulust; maks tasutakse esitamisel koha kontolt',withdraw:'8% iga väljavõtte pealt',space:'25% kogupinnast reserveeritud, 75% sisustatav',open:'iga koha iseseisev 24h aken; max 12h avatud',bank:'iga koha konto avamine 200 käiku',expand:'ainult suurimas 2500 m² hoones; +1 m² = 50 käiku',blackMarket:'15 min turuvoorud; ostu/müügi kogus sõltub hoonest, klientidest, nõudlusest ja VIP-ist; vahelejäämise/konfiskeerimise riski ei ole',blackCash:'must kassa liigub ainult sularaha ↔ must kassa; väljavõtutasu puudub'},profitGuide:[{type:'Baar',best:'Umbes 8 töötajat iga 100 m² kohta. Suurenda koos pinnaga nii teenindust kui baarimehi; turva ja koristus kasvavad aeglasemalt.',target:'100 m² kohta umbes 2.2 baarmeni · 2.6 teenindajat · 1.2 kööki · 1.2 turvat · 0.8 koristajat',warning:'Alla ideaali langevad teenindus, külastajate arv ja käive. Üle ~125% ideaali annab lisapersonal vähe kasu ja sööb palgaga kasumit.'},{type:'Ööklubi',best:'Umbes 8 töötajat iga 100 m² kohta. Baar, teenindus ja turva on põhirõhk; DJ/hostess kasvavad samuti koos pinna ja nõudlusega.',target:'100 m² kohta umbes 2.3 baarmeni · 2.2 teenindajat · 1.8 turvat · 0.8 koristajat · 0.65 hostessit · 0.45 DJ-d',warning:'VIP ja suur nõudlus vajavad piisavalt turvat ja teenindust. Üks DJ ei kanna enam mitutuhat m² klubi täisvõimsusel.'},{type:'Striptiisiklubi',best:'Umbes 10 töötajat iga 100 m² kohta, sest lisanduvad esinejad ja hostessid. Suuremal pinnal peab kasvama ka turva ning teenindus.',target:'100 m² kohta umbes 3 esinejat · 1.8 baarmeni · 1.4 teenindajat · 1.6 turvat · 1 hostess · 0.7 koristajat · 0.35 DJ-d',warning:'Esinejate ja turva puudus piirab nõudlust kiiresti; liiga suur personal tõstab püsikulu.'}],ticketGuide:[{situation:'Koht täitub peaaegu iga tund',advice:'Tõsta piletit 10–20% kaupa ja vaata järgmise 1–3 tunni külastajate arvu ning netotulu. Eesmärk pole alati täismaja, vaid suurim kasum tunnis.'},{situation:'Koht on alla ~60% täis',advice:'Langeta piletit 10–20%, paranda reklaami/personali/sisustust või oota paremat nõudlust. Kõrge hind tühjas kohas põletab tulu.'},{situation:'Reklaamikampaania või tugev maine',advice:'Nõudlus on kõrgem, seega võid tavahinnast rohkem küsida. Tõsta hinda järk-järgult, kuni külastajate langus hakkab brutotulu vähendama.'},{situation:'VIP-õhtu / külalisesineja',advice:'VIP suurendab nõudlust ja lubab kõrgemat piletit. Suurel pinnal proovi enne +20–40%; väga tugeva külalise ja täis personali korral võib sobida rohkem.'},{situation:'Uus või nõrk koht',advice:'Hoia alguses pilet mõõdukas, et kasvatada külastusi ja mainet. Ära pane kõrget hinda enne, kui personal, turva ja inventar suudavad nõudlust teenindada.'},{situation:'Otsustamise reegel',advice:'Võrdle alati tunni netot: külastajad × (pilet + keskmine kulu) miinus palgad, turva, tarnijad, reklaam/VIP, hooldus ja maks. Parim pilet on see, mis jätab suurima neto, mitte see, mis toob kõige rohkem külastajaid.'}],items:NIGHT_SHOP.map(x=>({id:x.id,name:x.name,m2:x.m2,appeal:x.appeal||0,power:x.power||0})),premises:NIGHT_PREMISES.map(x=>({name:x.name,area:x.area,cost:x.cost,usable:x.area*.75})),optimumByPremise:NIGHT_PREMISES.flatMap(p=>['bar','club','strip'].map(type=>{const v={type,area:p.area,staff:[],securityContract:null};const o=nightOptimal(v),a=p.area;let inventory;if(type==='bar')inventory={table:Math.max(4,Math.round(a/16)),chair:Math.max(12,Math.round(a/5)),barstool:Math.max(8,Math.round(a/9)),sofa:Math.max(2,Math.round(a/55)),vipbooth:Math.max(0,Math.round(a/220)),barcounter:Math.max(1,Math.round(a/350)),speaker5:Math.max(2,Math.round(a/140)),sub:Math.max(1,Math.round(a/220)),lights:Math.max(1,Math.round(a/250))};else if(type==='club')inventory={table:Math.max(3,Math.round(a/35)),chair:Math.max(8,Math.round(a/12)),barstool:Math.max(8,Math.round(a/10)),sofa:Math.max(3,Math.round(a/45)),vipbooth:Math.max(1,Math.round(a/100)),barcounter:Math.max(1,Math.round(a/300)),speaker10:Math.max(3,Math.round(a/90)),sub:Math.max(2,Math.round(a/110)),djpro:Math.max(1,Math.round(a/450)),lights:Math.max(2,Math.round(a/120)),laser:Math.max(1,Math.round(a/180))};else inventory={table:Math.max(2,Math.round(a/45)),chair:Math.max(8,Math.round(a/14)),barstool:Math.max(6,Math.round(a/12)),sofa:Math.max(3,Math.round(a/40)),vipbooth:Math.max(2,Math.round(a/80)),barcounter:Math.max(1,Math.round(a/300)),stage:Math.max(1,Math.round(a/350)),private:Math.max(2,Math.round(a/90)),dressing:Math.max(1,Math.round(a/350)),speaker10:Math.max(2,Math.round(a/100)),sub:Math.max(2,Math.round(a/140)),djpro:Math.max(1,Math.round(a/500)),lights:Math.max(2,Math.round(a/140))};return{premise:p.name,area:p.area,type:NIGHT_TYPES[type].name,staff:o,inventory}})),bestProfit:'Kõrgeim absoluutne teenimislagi on suurimal Tallinna sadama 2500 m² pinnal ning sealt edasi lisam² ostes. Suurem pind vajab nüüd päriselt rohkem töötajaid ja rohkem inventari; maksimaalne kasum tuleb ainult siis, kui personal, turva, piletihind, inventar, hooldus, reklaam ja VIP-kulud on tasakaalus.',notes:['Personal skaleerub nüüd ligikaudu 8 töötajani / 100 m² baaris ja ööklubis ning ~10 / 100 m² striptiisiklubis.','Inventari soovitused skaleeruvad samuti pinnaga: suurem koht vajab kümneid/sadu toole, laudu, baaripukke ning rohkem heli/valgust, mitte üksikuid esemeid.','Maksimumkasum ei tule lihtsalt kõige suuremast kogusest: ülepersonali ja ruumi ületäitmine söövad kasumit või blokeerivad ostu.','Piletihind vähendab nõudlust eksponentsiaalselt; kõrgem maine, reklaam, VIP ja kvaliteet lubavad kõrgemat hinda.','Reklaam, koolitus ja VIP mõjutavad külastajaid, kuid nende oma kulu tuleb deklaratsioonis kasumist maha.','Hooldus ja purunemine vähendavad kvaliteeti; 0% seisukorraga ese ei kasuta enam m².','Must turg on seotud koha kliendivooluga: väikseima hoone väga hea tavapärane lagi on umbes 30M €/h ning VIP võib selle tõsta umbes 50–60M €/h; suurima hoone tugev tund võib ulatuda umbes 1B €/h.','Musta turu kogused uuenevad iga 15 minuti järel ja pole jäik nähtav kasumilimiit — mängija näeb ainult selle vooru ostu- ja müügikoguseid.','Teiste mängijate klubidel on avalik klubi skoor ja koha raha; personali ning inventari täpset koosseisu ei näidata.']})});
 
-app.get('/api/production',auth,(req,res)=>{const u=req.user,p=u.production||{};const cl=clamp(Math.floor(p.capacityLevel||1),1,10);res.json({production:p,materials:LAB_MATERIALS,capacity:LAB_CAPACITY[cl],nextCapacityCost:cl<10?LAB_CAPACITY_COST[cl+1]:null,sellPrice:LAB_SELL_PRICE,recipe:{plant:2,chem:1,pack:1},turns:20})});
+app.get('/api/production',auth,(req,res)=>{const u=req.user,p=u.production||{};const cl=clamp(Math.floor(p.capacityLevel||1),1,10);res.json({production:p,materials:LAB_MATERIALS,capacity:LAB_CAPACITY[cl],nextCapacityCost:cl<10?LAB_CAPACITY_COST[cl+1]:null,sellPrice:LAB_SELL_PRICE,recipe:{plant:2,chem:1,pack:1},maxLevel:10,currentLevel:cl,levelPrices:LAB_CAPACITY_COST,capacityByLevel:LAB_CAPACITY,maxGross:LAB_CAPACITY[cl]*LAB_SELL_PRICE,maxMaterialsCost:LAB_CAPACITY[cl]*(2*LAB_MATERIALS.plant.price+LAB_MATERIALS.chem.price+LAB_MATERIALS.pack.price),turns:50})});
 app.post('/api/production/material',auth,(req,res)=>{const u=req.user,p=u.production,type=String(req.body.type||''),q=Math.max(1,Math.min(100000,Math.floor(+req.body.q||0))),m=LAB_MATERIALS[type];if(!m)return res.status(400).json({error:'Vigane materjal.'});const cost=q*m.price;if(u.cash<cost)return res.status(400).json({error:`Vaja ${cost} € sularaha.`});u.cash-=cost;p.materials[type]=(p.materials[type]||0)+q;gameIncome(cost,'production_material',u);ok(res,u,{message:`Ostsid ${q} × ${m.name} hinnaga ${cost} €.`})});
 app.post('/api/production/upgrade',auth,(req,res)=>{const u=req.user,p=u.production,type=String(req.body.type||'');if(type==='capacity'){const n=Math.min(10,(p.capacityLevel||1)+1);if(n===(p.capacityLevel||1))return res.status(400).json({error:'Tootmismaht on maksimumis.'});const cost=LAB_CAPACITY_COST[n];if(u.cash<cost)return res.status(400).json({error:`Vaja ${cost} €.`});u.cash-=cost;p.capacityLevel=n;gameIncome(cost,'production_capacity_upgrade',u);return ok(res,u,{message:`Tootmismaht nüüd level ${n}: kuni ${LAB_CAPACITY[n]} ühikut korraga.`})}res.status(400).json({error:'Vigane uuendus.'})});
-app.post('/api/production/make',auth,(req,res)=>{const u=req.user,p=u.production;const cap=LAB_CAPACITY[clamp(Math.floor(p.capacityLevel||1),1,10)],q=Math.max(1,Math.min(cap,Math.floor(+req.body.q||cap))),need={plant:q*2,chem:q,pack:q};for(const k of Object.keys(need))if((p.materials[k]||0)<need[k])return res.status(400).json({error:'Materjale pole valitud koguse jaoks piisavalt.'});if(!needTurns(u,20))return res.status(400).json({error:'Vaja 20 käiku.'});for(const k of Object.keys(need))p.materials[k]-=need[k];p.stock=(p.stock||0)+q;p.totalMade=(p.totalMade||0)+q;p.nextAt=0;ok(res,u,{message:`Valmistasid ${q} ühikut kohe. Kulutasid 20 käiku.`})});
+app.post('/api/production/make',auth,(req,res)=>{const u=req.user,p=u.production;const cap=LAB_CAPACITY[clamp(Math.floor(p.capacityLevel||1),1,10)],q=Math.max(1,Math.min(cap,Math.floor(+req.body.q||cap))),need={plant:q*2,chem:q,pack:q};for(const k of Object.keys(need))if((p.materials[k]||0)<need[k])return res.status(400).json({error:'Materjale pole valitud koguse jaoks piisavalt.'});if(!needTurns(u,50))return res.status(400).json({error:'Vaja 50 käiku.'});for(const k of Object.keys(need))p.materials[k]-=need[k];p.stock=(p.stock||0)+q;p.totalMade=(p.totalMade||0)+q;p.nextAt=0;ok(res,u,{message:`Valmistasid ${q} ühikut kohe. Kulutasid 50 käiku.`})});
 app.post('/api/production/sell',auth,(req,res)=>{const u=req.user,p=u.production,stock=Math.max(0,Math.floor(p.stock||0));if(stock<=0)return res.status(400).json({error:'Valmistoodangut pole.'});const q=Math.max(1,Math.min(stock,Math.floor(+req.body.q||stock)));const gross=q*LAB_SELL_PRICE;p.stock-=q;p.totalSold=(p.totalSold||0)+q;const credit=creditBankFirst(u,gross);ok(res,u,{message:`Müüsid ${q} ühikut ${gross} € eest. Panka ${credit.toBank} €${credit.toCash?`, sularahasse ${credit.toCash} €`:''}.`})});
 app.post('/api/casino/slot',auth,(req,res)=>{const u=req.user,stake=Math.floor(Number(req.body.stake)||0);if(stake<=0)return res.status(400).json({error:'Sisesta panus.'});if(stake>u.cash)return res.status(400).json({error:'Sularaha pole piisavalt.'});u.cash-=stake;const out=slotOutcome(),payout=Math.floor(stake*out.mult);let credit={toBank:0,toCash:0};if(payout>0)credit=creditBankFirst(u,payout);u.stats=u.stats||{};u.stats.slotSpins=(u.stats.slotSpins||0)+1;u.stats.slotWagered=(u.stats.slotWagered||0)+stake;u.stats.slotWon=(u.stats.slotWon||0)+payout;logCasinoSpin(u,stake,payout,'player');const message=out.mult===0?`Slot: kaotasid ${stake} €.`:`${out.label}! Võit ${payout} € (${out.mult}×). Panka ${credit.toBank} €${credit.toCash?`, sularahasse ${credit.toCash} €`:''}.`;ok(res,u,{message,slot:{reels:out.reels,multiplier:out.mult,stake,payout,label:out.label}})});
 
@@ -1588,21 +2134,82 @@ app.post('/api/gang/role',auth,(req,res)=>{
 app.post('/api/gang/reward',auth,(req,res)=>{const u=req.user,g=db.gangs[u.gangId],t=resolveUser(req.body.targetName||req.body.targetId),amount=Math.max(1,Math.floor(+req.body.amount||0)),reason=String(req.body.reason||'Kamba preemia').slice(0,120);if(!g||!t||!g.members.includes(t.id))return res.status(400).json({error:'Vigane kamp/liige.'});if(!(g.leader===u.id||(g.assistants||[]).includes(u.id)))return res.status(403).json({error:'Ainult juht/abijuht.'});if(g.fund<amount)return res.status(400).json({error:'Kamba kassas pole piisavalt.'});g.fund-=amount;creditCashWithDebt(t,amount,'gang_reward');g.rewards=g.rewards||[];g.rewards.push({time:Date.now(),from:u.id,to:t.id,amount,reason});g.log=g.log||[];g.log.push({time:Date.now(),type:'reward',from:u.id,to:t.id,amount,reason});notify(t,'gang',`Kamp maksis sulle ${amount} € preemiat: ${reason}`);ok(res,u,{message:'Preemia makstud.'})});
 app.get('/api/gang/market',auth,(req,res)=>{const g=db.gangs[req.user.gangId];if(!g)return res.status(404).json({error:'Kampi pole.'});const price=Math.floor((db.settings.gangWeaponPrice||25000000)*market()),power=Math.floor(db.settings.gangWeaponPower||300),weaponScore=gangWeaponNextScore(g);res.json({points:g.points||0,fund:g.fund||0,weapons:g.weapons||{},weaponCount:gangWeaponCount(g),nextWeaponScore:weaponScore,items:[{id:'attack',name:'Kamba ründerelv',points:1,price,atk:power,def:Math.floor(power*.5),score:weaponScore},{id:'defense',name:'Kamba kaitserelv',points:1,price,atk:Math.floor(power*.5),def:power,score:weaponScore}]})});
 app.post('/api/gang/weapon-buy',auth,(req,res)=>{const u=req.user,g=db.gangs[u.gangId],type=String(req.body.type||''),q=clamp(Math.floor(+req.body.q||1),1,10000);if(!g||!['attack','defense'].includes(type))return res.status(400).json({error:'Vigane kamp/relv.'});if(!(g.leader===u.id||(g.assistants||[]).includes(u.id)))return res.status(403).json({error:'Ainult juht/abijuht saab kamba relvi osta.'});const pointCost=q,unit=Math.floor((db.settings.gangWeaponPrice||25000000)*market()),cost=unit*q;if((g.points||0)<pointCost)return res.status(400).json({error:`Vaja ${pointCost} kamba punkti.`});if((g.fund||0)<cost)return res.status(400).json({error:`Kamba kassas vaja ${cost} €.`});g.points-=pointCost;g.fund-=cost;g.weapons=g.weapons||{};g.weapons[type]=(g.weapons[type]||0)+q;gameIncome(Math.floor(cost*(db.settings.marketFee||.03)),'gang_weapon_fee',u);g.log=g.log||[];g.log.push({time:Date.now(),type:'weapon_buy',userId:u.id,weapon:type,q,cost,points:pointCost});ok(res,u,{message:`Kamp ostis ${q} relva. -${pointCost} punkti, -${cost} €.`})});
-app.get('/api/lottery',auth,(req,res)=>{const L=db.settings.lottery,buyers=Object.entries(L.tickets||{}).map(([id,q])=>({id,name:byId(id)?.name||'Tundmatu',tickets:q})).sort((a,b)=>b.tickets-a.tickets);const totalTickets=buyers.reduce((n,x)=>n+x.tickets,0);res.json({...L,prize:Number(L.pot||0),totalTickets,buyers,remainingTickets:Math.max(0,Number(L.maxTickets||0)-totalTickets)})});
-function createLottery(u,x={}){const L=db.settings.lottery;if(L.active&&Date.now()<Number(L.drawAt||0))throw new Error('Üks loos on juba aktiivne.');const ticketPrice=Math.floor(Number(x.ticketPrice)||0),maxTickets=Math.floor(Number(x.maxTickets)||0),minutes=Math.floor(Number(x.minutes)||0);if(ticketPrice<1||maxTickets<1||minutes<1)throw new Error('Pileti hind, piletite arv ja kestus peavad olema vähemalt 1.');if(!Number.isSafeInteger(ticketPrice)||!Number.isSafeInteger(maxTickets)||ticketPrice>Number.MAX_SAFE_INTEGER/maxTickets)throw new Error('Loosi numbrid on liiga suured.');Object.assign(L,{active:true,title:String(x.title||`${u.name} loos`).slice(0,50),ticketPrice,maxTickets,pot:0,bankShare:0,organizerId:u.id,organizerName:u.name,drawAt:Date.now()+Math.min(minutes,43200)*60000,tickets:{},winner:null});saveSoon();io.emit('settings',db.settings);return L}
-app.post('/api/lottery/create',auth,(req,res)=>{try{createLottery(req.user,req.body||{});ok(res,req.user,{message:'Loos loodud.'})}catch(e){res.status(400).json({error:e.message})}});
-app.post('/api/lottery/buy',auth,(req,res)=>{const u=req.user,L=db.settings.lottery,q=Math.floor(Number(req.body.q));if(!Number.isFinite(q)||q<1)return res.status(400).json({error:'Vali vähemalt 1 pilet.'});if(!L.active||Date.now()>=L.drawAt)return res.status(400).json({error:'Loos pole aktiivne.'});const sold=Object.values(L.tickets||{}).reduce((n,v)=>n+Number(v||0),0);if(sold+q>Number(L.maxTickets||0))return res.status(400).json({error:`Alles on ${Math.max(0,Number(L.maxTickets||0)-sold)} piletit.`});const cost=q*Number(L.ticketPrice||0);if(!Number.isSafeInteger(cost)||cost<=0)return res.status(400).json({error:'Piletisumma on liiga suur.'});if(u.cash<cost)return res.status(400).json({error:'Raha puudub.'});u.cash-=cost;const bankPart=Math.floor(cost*.10),potPart=cost-bankPart;gameIncome(bankPart,'lottery_ticket_share',u);L.pot=Number(L.pot||0)+potPart;L.bankShare=Number(L.bankShare||0)+bankPart;L.tickets[u.id]=Number(L.tickets[u.id]||0)+q;ok(res,u,{message:`Ostsid ${q} piletit. Võidufondi läks ${potPart} € ja Keskpanka ${bankPart} €.`})});
-function drawLottery(){const L=db.settings.lottery;if(!L.active||Date.now()<L.drawAt)return;const entries=Object.entries(L.tickets||{}).map(([id,q])=>[id,Math.max(0,Math.floor(Number(q)||0))]).filter(x=>x[1]>0);const total=entries.reduce((n,x)=>n+x[1],0);if(total>0){let pick=Math.floor(Math.random()*total)+1,winnerId=null;for(const [id,q] of entries){pick-=q;if(pick<=0){winnerId=id;break}}const u=byId(winnerId);if(u){const prize=Math.max(0,Math.floor(Number(L.pot||0))),c=creditBankFirst(u,prize);L.winner=u.name;notify(u,'lottery',`Võitsid loosiga ${prize} €. Panka ${c.toBank} €${c.toCash?`, sularahasse ${c.toCash} €`:''}.`)}}L.active=false;io.emit('settings',db.settings);saveSoon()}
+// v8 multi-lottery: legacy singleton is converted once, without reissuing payouts.
+function lotteries(){
+ if(!Array.isArray(db.lotteries))db.lotteries=[];
+ if(!db.meta.lotteriesMigratedV8){
+  const old=db.settings.lottery||{};
+  if(old.active){db.lotteries.push({...cloneData(old),id:'legacy-'+crypto.randomUUID()});old.active=false}
+  db.meta.lotteriesMigratedV8=true;
+ }
+ return db.lotteries;
+}
+function lotteryView(L){
+ const buyers=Object.entries(L.tickets||{}).map(([id,q])=>({id,name:byId(id)?.name||'Tundmatu',tickets:q})).sort((a,b)=>b.tickets-a.tickets);
+ const totalTickets=buyers.reduce((n,x)=>n+Number(x.tickets||0),0);
+ return {...L,prize:Number(L.pot||0),totalTickets,buyers,remainingTickets:Math.max(0,Number(L.maxTickets||0)-totalTickets)};
+}
+app.get('/api/lottery',auth,(req,res)=>{
+ const all=lotteries(),active=all.filter(x=>x.active&&Date.now()<x.drawAt),sorted=active.sort((a,b)=>a.drawAt-b.drawAt);
+ const selected=sorted.find(x=>x.id===req.query.id)||sorted[0];
+ res.json({...(selected?lotteryView(selected):{active:false,winner:all.slice(-1)[0]?.winner||null}),lotteries:sorted.map(lotteryView)});
+});
+function createLottery(u,x={}){
+ const active=lotteries().filter(l=>l.active&&Date.now()<l.drawAt);
+ if(active.length>=20)throw new Error('Korraga saab korraldada kuni 20 loosi.');
+ const ticketPrice=Math.floor(Number(x.ticketPrice)||0),maxTickets=Math.floor(Number(x.maxTickets)||0),minutes=Math.floor(Number(x.minutes)||0);
+ if(ticketPrice<1||maxTickets<1||minutes<1)throw new Error('Pileti hind, piletite arv ja kestus peavad olema vähemalt 1.');
+ if(!Number.isSafeInteger(ticketPrice)||!Number.isSafeInteger(maxTickets)||ticketPrice>Number.MAX_SAFE_INTEGER/maxTickets)throw new Error('Loosi numbrid on liiga suured.');
+ const L={id:crypto.randomUUID(),active:true,title:String(x.title||`${u.name} loos`).slice(0,50),ticketPrice,maxTickets,pot:0,bankShare:0,organizerId:u.id,organizerName:u.name,drawAt:Date.now()+Math.min(minutes,43200)*60000,tickets:{},winner:null};
+ db.lotteries.push(L);db.lotteries=db.lotteries.slice(-200);saveSoon();io.emit('settings',db.settings);return L;
+}
+app.post('/api/lottery/create',auth,(req,res)=>{try{const L=createLottery(req.user,req.body||{});ok(res,req.user,{message:'Loos loodud.',lotteryId:L.id})}catch(e){res.status(400).json({error:e.message})}});
+app.post('/api/lottery/buy',auth,(req,res)=>{
+ const u=req.user,active=lotteries().filter(l=>l.active&&Date.now()<l.drawAt),L=active.find(l=>l.id===String(req.body.lotteryId||''))||(active.length===1?active[0]:null),q=Math.floor(Number(req.body.q));
+ if(!L)return res.status(400).json({error:'Vali loos, mille pileteid soovid osta.'});
+ if(!Number.isSafeInteger(q)||q<1)return res.status(400).json({error:'Vali vähemalt 1 pilet.'});
+ const sold=Object.values(L.tickets||{}).reduce((n,v)=>n+Number(v||0),0);
+ if(sold+q>L.maxTickets)return res.status(400).json({error:`Alles on ${Math.max(0,L.maxTickets-sold)} piletit.`});
+ const cost=q*L.ticketPrice;
+ if(!Number.isSafeInteger(cost)||cost<1)return res.status(400).json({error:'Piletisumma on liiga suur.'});
+ if(u.cash<cost)return res.status(400).json({error:'Raha puudub.'});
+ u.cash-=cost;const bankPart=Math.floor(cost*.10),potPart=cost-bankPart;
+ gameIncome(bankPart,'lottery_ticket_share',u);L.pot+=potPart;L.bankShare+=bankPart;L.tickets[u.id]=(L.tickets[u.id]||0)+q;
+ ok(res,u,{message:`Ostsid ${q} piletit. Võidufondi läks ${potPart} € ja Keskpanka ${bankPart} €.`});
+});
+function drawLottery(){
+ let changed=false;
+ for(const L of lotteries()){
+  if(!L.active||Date.now()<L.drawAt)continue;
+  const entries=Object.entries(L.tickets||{}).map(([id,q])=>[id,Math.max(0,Math.floor(Number(q)||0))]).filter(x=>x[1]>0),total=entries.reduce((n,x)=>n+x[1],0);
+  if(total>0){let pick=Math.floor(Math.random()*total)+1,winnerId=null;
+   for(const [id,q] of entries){pick-=q;if(pick<=0){winnerId=id;break}}
+   const winner=byId(winnerId);
+   if(winner){const prize=Math.max(0,Math.floor(Number(L.pot||0))),c=creditBankFirst(winner,prize);L.winner=winner.name;notify(winner,'lottery',`Võitsid loosiga ${prize} €. Panka ${c.toBank} €${c.toCash?`, sularahasse ${c.toCash} €`:''}.`)}
+  }
+  L.active=false;changed=true;
+ }
+ if(changed){io.emit('settings',db.settings);saveSoon()}
+}
 app.post('/api/jail/bail',auth,(req,res)=>{const u=req.user;if(!u.jailedUntil||u.jailedUntil<=Date.now())return res.status(400).json({error:'Sa pole vanglas.'});const mins=Math.ceil((u.jailedUntil-Date.now())/60000),cost=Math.max(50000,mins*50000*(1+u.wanted/100));if(u.cash<cost)return res.status(400).json({error:`Kautsjon maksab ${Math.floor(cost)} €.`});u.cash-=Math.floor(cost);u.jailedUntil=0;u.wanted=Math.max(0,u.wanted-10);ok(res,u,{message:`Kautsjon ${Math.floor(cost)} € makstud.`})});
-app.post('/api/insurance/buy',auth,(req,res)=>{const u=req.user,days=clamp(Math.floor(+req.body.days||7),1,30),tier=String(req.body.tier||'standard'),cfg=db.settings.insuranceTiers[tier]||db.settings.insuranceTiers.standard,cost=insuranceQuote(u,tier,days);if(u.cash<cost)return res.status(400).json({error:`Kindlustus maksab ${cost} €.`});u.cash-=cost;gameIncome(cost,'insurance',u);u.insurance={active:true,until:Date.now()+days*86400000,coverage:cfg.coverage,deductible:cfg.deductible,tier};ok(res,u,{message:`${tier} kindlustus ${days} päevaks aktiveeritud. Katvus ${Math.round(cfg.coverage*100)}%.`})});
-app.post('/api/operation',auth,(req,res)=>{const u=req.user,o=SECRET_OPS.find(x=>x.id===req.body.id);if(!freeToAct(u))return res.status(403).json({error:'Oled vanglas.'});if(!o||u.level<o.needLevel||u.rep<o.repNeed)return res.status(400).json({error:'Operatsiooni nõuded pole täidetud.'});if(u.cash<o.cost)return res.status(400).json({error:'Ettevalmistusraha puudub.'});if(!needTurns(u,o.turns))return res.status(400).json({error:`Vaja ${o.turns} käiku.`});u.cash-=o.cost;const cb=combat(u),risk=clamp(o.risk-cb.atk/(cb.atk+2e8),.08,.70);if(Math.random()<risk){u.wanted=Math.max(0,(u.wanted||0)+8);u.rep=(u.rep||0)-3;if(Math.random()<.45)u.jailedUntil=Date.now()+(15+Math.floor(u.wanted/2))*60000;return ok(res,u,{message:'Salajane operatsioon ebaõnnestus.'})}const gain=rand(o.rewardMin,o.rewardMax);creditCashWithDebt(u,gain,'operation');u.stats.operations++;u.rep=(u.rep||0)+5;u.wanted=Math.max(0,(u.wanted||0)+5);ok(res,u,{message:`Operatsioon õnnestus: +${gain} €.`})});
+app.post('/api/insurance/buy',auth,(req,res)=>res.status(410).json({error:'Kindlustus on mängust eemaldatud.'}));
+// v8 audit: the web client calls this endpoint when opening the Underworld panel.
+app.get('/api/underworld',auth,(req,res)=>{
+  const u=req.user;
+  expireBounties();
+  const spyTypes={};
+  for(const [type,details] of Object.entries(SPY_TYPES))spyTypes[type]={...details,price:spyPrice(type)};
+  const bounties=Object.values(db.bounties||{}).filter(b=>b.active).map(b=>({id:b.id,targetName:byId(b.targetId)?.name||'?',amount:b.amount,reward:b.reward,requiredHits:b.requiredHits}));
+  res.json({wanted:u.wanted||0,rep:u.rep||0,jailedUntil:u.jailedUntil||0,spyTypes,operations:SECRET_OPS,bounties});
+});
+app.post('/api/operation',auth,(req,res)=>{if(!SECRET_OPS.length)return res.status(410).json({error:'Salajaste operatsioonide valikud on hetkel kontrollimisel.'});const u=req.user,o=SECRET_OPS.find(x=>x.id===req.body.id);if(!freeToAct(u))return res.status(403).json({error:'Oled vanglas.'});if(!o||u.level<o.needLevel||u.rep<o.repNeed)return res.status(400).json({error:'Operatsiooni nõuded pole täidetud.'});if(u.cash<o.cost)return res.status(400).json({error:'Ettevalmistusraha puudub.'});if(!needTurns(u,o.turns))return res.status(400).json({error:`Vaja ${o.turns} käiku.`});u.cash-=o.cost;const cb=combat(u),risk=clamp(o.risk-cb.atk/(cb.atk+2e8),.08,.70);if(Math.random()<risk){u.wanted=Math.max(0,(u.wanted||0)+8);u.rep=(u.rep||0)-3;if(Math.random()<.45)u.jailedUntil=Date.now()+(15+Math.floor(u.wanted/2))*60000;return ok(res,u,{message:'Salajane operatsioon ebaõnnestus.'})}const gain=rand(o.rewardMin,o.rewardMax);creditCashWithDebt(u,gain,'operation');u.stats.operations++;u.rep=(u.rep||0)+5;u.wanted=Math.max(0,(u.wanted||0)+5);ok(res,u,{message:`Operatsioon õnnestus: +${gain} €.`})});
 function expireBounties(now=Date.now()){for(const b of Object.values(db.bounties||{})){if(b.active&&Number(b.expiresAt||0)>0&&now>=Number(b.expiresAt)){b.active=false;b.expiredAt=now}}}
 app.get('/api/bounties',auth,(req,res)=>{expireBounties();res.json({bounties:Object.values(db.bounties).filter(x=>x.active).map(x=>({...x,targetName:byId(x.targetId)?.name||'?',posterName:byId(x.posterId)?.name||'?'}))});});
 app.post('/api/bounty',auth,(req,res)=>{const u=req.user,t=resolveUser(req.body.targetName||req.body.targetId),amount=Math.floor(+req.body.amount||0),requiredHits=clamp(Math.floor(+req.body.requiredHits||1),1,1000),minutes=clamp(Math.floor(+req.body.minutes||4320),1,43200);if(!t||t.id===u.id||amount<100000)return res.status(400).json({error:'Vigane siht või min bounty 100 000 €.'});if(t.role==='owner')return res.status(403).json({error:'Ownerile bounty’t panna ei saa.'});if(u.cash<amount)return res.status(400).json({error:'Raha puudub.'});u.cash-=amount;const fee=Math.floor(amount*(db.settings.bountyFee||.25)),reward=amount-fee;gameIncome(fee,'bounty_fee',u);const id=String(db.nextIds.bounty++);db.bounties[id]={id,posterId:u.id,targetId:t.id,amount,fee,reward,requiredHits,progress:{},expiresAt:Date.now()+minutes*60000,active:true,createdAt:Date.now()};notify(t,'bounty',`${u.name} pani sinu peale bounty. Preemia ${reward} €, tingimus ${requiredHits} edukat rünnakut.`);ok(res,u,{message:`Bounty loodud ${minutes} minutiks. Teenustasu ${fee} €, preemia ${reward} €.`})});
 app.get('/api/turn-shop',auth,(req,res)=>res.json({packs:[],orders:[],disabled:true}));
 app.post('/api/turn-shop/order',auth,(req,res)=>res.status(410).json({error:'Käigupakkide müük on ajutiselt eemaldatud.'}));
 app.post('/api/privacy',auth,(req,res)=>res.status(410).json({error:'Profiili privaatsuse seaded on eemaldatud.'}));
-app.get('/api/stats',auth,(req,res)=>{const us=Object.values(db.users).filter(x=>!x.banned);const top=(f)=>us.map(u=>({name:u.name,value:f(u)})).sort((a,b)=>b.value-a.value).slice(0,20);res.json({score:top(score),cash:top(netWorth),wins:top(u=>u.stats.wins),crimes:top(u=>u.stats.crimes),rep:top(u=>u.rep),wanted:top(u=>u.wanted)})});
+app.get('/api/stats',auth,(req,res)=>{const us=Object.values(db.users).filter(x=>!x.banned&&!x.npc);const top=(f)=>us.map(u=>({name:u.name,value:f(u)})).sort((a,b)=>b.value-a.value).slice(0,20);res.json({score:top(score),cash:top(netWorth),wins:top(u=>u.stats.wins),crimes:top(u=>u.stats.crimes),rep:top(u=>u.rep),wanted:top(u=>u.wanted)})});
 app.get('/api/admin/users',auth,admin,(req,res)=>res.json({users:Object.values(db.users).map(u=>pub(u))}));
 app.post('/api/admin/impersonate',auth,admin,(req,res)=>{if(req.user.role!=='owner')return res.status(403).json({error:'Ainult OWNER saab kasutajate kontodesse siseneda.'});const t=byId(req.body.id);if(!t)return res.status(404).json({error:'Mängijat pole.'});if(t.role==='owner')return res.status(400).json({error:'Oled juba OWNER kontol.'});audit(req.user,'owner_impersonate',t.id,{target:t.name});secLog('owner_impersonate',req,req.user,{targetUserId:t.id,targetName:t.name});saveSoon();return res.json({ok:true,token:token(t.name),user:pub(t),message:`Sisened kasutaja ${t.name} kontosse.`})});
 app.get('/api/admin/casino',auth,admin,(req,res)=>{
@@ -1627,11 +2234,13 @@ app.post('/api/bodyguard/offer',auth,(req,res)=>{const u=req.user,t=resolveUser(
 app.get('/api/bodyguard',auth,(req,res)=>res.json({active:req.user.bodyguard&&req.user.bodyguardUntil>Date.now()?{guardId:req.user.bodyguard,guardName:byId(req.user.bodyguard)?.name||'?',until:req.user.bodyguardUntil,defensePct:db.settings.bodyguardDefensePct}:null,offers:Object.values(db.bodyguardOffers||{}).filter(x=>x.guardId===req.user.id&&x.status==='pending').map(x=>({...x,clientName:byId(x.clientId)?.name||'?'}))}));
 app.post('/api/bodyguard/respond',auth,(req,res)=>{const id=String(req.body.id||'');db.bodyguardOffers=db.bodyguardOffers||{};let o=db.bodyguardOffers[id];const mine=x=>x&&String(x.guardId)===String(req.user.id)&&x.status==='pending';if(!mine(o)){o=Object.values(db.bodyguardOffers).filter(mine).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).find(x=>!id||String(x.id)===id)||null}if(!o){let n=(db.notifications||[]).find(n=>String(n.userId)===String(req.user.id)&&n.type==='bodyguard'&&String(n.data?.offerId||'')===id);if(!n)n=(db.notifications||[]).find(n=>String(n.userId)===String(req.user.id)&&n.type==='bodyguard'&&/pakkus sulle/i.test(String(n.text||'')));if(n){let clientId=n.data?.clientId||req.body.clientId,amount=Number(n.data?.amount||req.body.amount||0),hours=Number(n.data?.hours||req.body.hours||0);if(!clientId||!amount||!hours){const m=String(n.text||'').match(/^(.+?) pakkus sulle ([0-9 .]+) € ihukaitsja lepingut ([0-9]+) tunniks\.?$/i);if(m){const client=resolveUser(m[1]);clientId=client?.id;amount=Number(m[2].replace(/[ .]/g,''));hours=Number(m[3])}}if(clientId&&amount>0&&hours>0){const recoveredId=id||String(n.data?.offerId||db.nextIds.bodyguardOffer++);o={id:recoveredId,clientId,guardId:req.user.id,amount,hours,status:'pending',createdAt:n.time||Date.now()};db.bodyguardOffers[recoveredId]=o}}}if(!mine(o))return res.status(400).json({error:'Aktiivset ihukaitsja pakkumist ei leitud. Palu saatjal teha uus pakkumine.'});const accept=!!req.body.accept,client=byId(o.clientId);if(!accept){o.status='rejected';o.respondedAt=Date.now();if(client)notify(client,'bodyguard',`${req.user.name} lükkas ihukaitsja pakkumise tagasi.`);saveSoon();return res.json({ok:true,message:'Pakkumine tagasi lükatud.'})}if(!client)return res.status(400).json({error:'Pakkumise saatjat ei leitud.'});if(client.cash<o.amount)return res.status(400).json({error:'Pakkujal pole enam piisavalt raha.'});if(req.user.guardingUntil>Date.now())return res.status(400).json({error:'Oled juba kellegi aktiivne ihukaitsja.'});if(client.bodyguard&&client.bodyguardUntil>Date.now())return res.status(400).json({error:'Pakkujal on juba ihukaitsja.'});client.cash-=o.amount;const game=Math.floor(o.amount*clamp(Number(db.settings.bodyguardGameFee||.5),0,1)),guardPay=o.amount-game;gameIncome(game,'bodyguard_fee',client);creditCashWithDebt(req.user,guardPay,'bodyguard_pay');client.bodyguard=req.user.id;client.bodyguardUntil=Date.now()+o.hours*3600000;req.user.guardingClient=client.id;req.user.guardingUntil=client.bodyguardUntil;o.status='accepted';o.respondedAt=Date.now();notify(client,'bodyguard',`${req.user.name} on nüüd sinu ihukaitsja ${o.hours} tunniks. Kaitseboonus ${Math.round(db.settings.bodyguardDefensePct*100)}% tema Defense'ist.`);saveSoon();res.json({ok:true,user:pub(req.user),message:`Leping aktiveeritud. Sulle maksti ${guardPay} €.`})});
 app.get('/api/profile/:id',auth,(req,res)=>{const t=byId(req.params.id);if(!t||t.banned)return res.status(404).json({error:'Mängijat pole.'});const g=t.gangId&&db.gangs[t.gangId];res.json({profile:{id:t.id,name:t.name,role:t.role,vip:t.vip,level:t.level,score:score(t),cash:Number(t.cash)||0,rep:t.rep,wanted:t.wanted,city:t.city,educationName:EDU[t.education]?.name||'Puudub',propertyLevel:t.propertyLevel,propertyName:PROPERTY_NAMES[t.propertyLevel]||'Puudub',businessCount:Object.keys(t.businesses||{}).length,gangName:g?.name||null,wins:t.stats?.wins||0,losses:t.stats?.losses||0,jailed:!!(t.jailedUntil>Date.now()),bodyguard:!!(t.bodyguard&&t.bodyguardUntil>Date.now()),joinedAt:t.createdAt,lastActive:t.lastActive}})});
-app.get('/api/notifications',auth,(req,res)=>{const rows=db.notifications.filter(n=>n.userId===req.user.id).slice(0,150);for(const n of rows)n.read=true;saveSoon();res.json({notifications:rows})});
+app.get('/api/notifications',auth,(req,res)=>{const rows=db.notifications.filter(n=>n.userId===req.user.id&&n.type!=='message').slice(0,150);for(const n of rows)n.read=true;saveSoon();res.json({notifications:rows})});
 app.get('/api/messages',auth,(req,res)=>res.json({messages:db.messages.filter(m=>m.fromId===req.user.id||m.toId===req.user.id).slice(-300)}));
-app.post('/api/messages',auth,(req,res)=>{const to=resolveUser(req.body.toName||req.body.toId),text=String(req.body.text||'').trim().slice(0,1200);if(!to||!text)return res.status(400).json({error:'Vigane saaja või sõnum.'});const m={id:String(db.nextIds.message++),fromId:req.user.id,toId:to.id,from:req.user.name,to:to.name,text,time:Date.now()};db.messages.push(m);db.messages=db.messages.slice(-5000);notify(to,'message',`Uus sõnum mängijalt ${req.user.name}.`,{messageId:m.id});ok(res,req.user,{message:'Sõnum saadetud.'})});
+app.get('/api/unread-counts',auth,(req,res)=>res.json({messages:db.messages.filter(m=>m.toId===req.user.id&&m.read===false).length,notifications:db.notifications.filter(n=>n.userId===req.user.id&&n.read!==true&&n.type!=='message').length}));
+app.post('/api/messages/read',auth,(req,res)=>{let n=0;for(const m of db.messages){if(m.toId===req.user.id&&m.read!==true){m.read=true;n++}}if(n)saveSoon();res.json({ok:true,read:n})});
+app.post('/api/messages',auth,(req,res)=>{const to=resolveUser(req.body.toName||req.body.toId),text=String(req.body.text||'').trim().slice(0,1200);if(!to||!text)return res.status(400).json({error:'Vigane saaja või sõnum.'});const m={id:String(db.nextIds.message++),read:false,fromId:req.user.id,toId:to.id,from:req.user.name,to:to.name,text,time:Date.now()};db.messages.push(m);db.messages=db.messages.slice(-5000);notify(to,'message',`Uus sõnum mängijalt ${req.user.name}.`,{messageId:m.id});ok(res,req.user,{message:'Sõnum saadetud.'})});
 app.post('/api/spy/hire',auth,(req,res)=>{const u=req.user,type=String(req.body.type||''),n=clamp(Math.floor(+req.body.n||1),1,1000),cfg=SPY_TYPES[type];if(!cfg)return res.status(400).json({error:'Vigane spioon.'});const unit=spyPrice(type),cost=unit*n,turns=n*(cfg.hireTurns||5);if(u.cash<cost)return res.status(400).json({error:`Raha puudub. Hind ${cost} €.`});if(!needTurns(u,turns))return res.status(400).json({error:`Vaja ${turns} käiku.`});u.cash-=cost;gameIncome(cost,'spy_hire',u);u.spies=u.spies||{finnish:0,ukrainian:0,russian:0};u.spies[type]=Number(u.spies[type]||0)+n;saveSoon();ok(res,u,{message:`Palkasid ${n} × ${cfg.name}. Maksid ${cost} € ja ${turns} käiku.`})});
-app.post('/api/spy',auth,(req,res)=>{const u=req.user,t=resolveUser(req.body.targetName||req.body.targetId),type=String(req.body.type||'finnish');if(!t||t.id===u.id)return res.status(400).json({error:'Vigane siht.'});if(t.role==='owner')return res.status(403).json({error:'Ownerit ei saa spioneerida.'});if(!freeToAct(u))return res.status(403).json({error:'Oled vanglas.'});const last=u.lastSpyAt[t.id]||0;if(Date.now()-last<15*60000)return res.status(429).json({error:'Sama mängijat saab spioneerida 1× 15 minuti jooksul.'});if(!(u.spies[type]>0))return res.status(400).json({error:'Seda tüüpi spiooni pole.'});const spyTurns=25;if(!needTurns(u,spyTurns))return res.status(400).json({error:'Spioneerimiseks on vaja 25 käiku.'});u.spies[type]=Math.max(0,Number(u.spies[type]||0)-1);u.lastSpyAt[t.id]=Date.now();const skill=SPY_TYPES[type]?.skill||.55,def=Math.min(.55,(t.guards||0)/100000+(t.securityLevel||1)/1200),success=Math.random()<clamp(skill-def,.12,.9);if(!success){if(Math.random()<.6)notify(t,'spy',`${u.name} proovis sind spioneerida, kuid jäi vahele.`);return ok(res,u,{message:'Spionaaž ebaõnnestus.'})}const intel={cash:t.cash,bankRange:t.bank<1e6?'alla 1M':t.bank<100e6?'1M–100M':t.bank<1e9?'100M–1B':'üle 1B',mafia:t.mafia,guards:t.guards,weapons:Object.values(t.weapons||{}).reduce((a,b)=>a+b,0),combat:combat(t),businesses:Object.keys(t.businesses||{}).length};ok(res,u,{message:'Spionaaž õnnestus.',intel})});
+app.post('/api/spy',auth,(req,res)=>{const u=req.user,t=resolveUser(req.body.targetName||req.body.targetId),type=String(req.body.type||'finnish');if(!t||t.id===u.id)return res.status(400).json({error:'Vigane siht.'});if(t.role==='owner')return res.status(403).json({error:'Ownerit ei saa spioneerida.'});if(!freeToAct(u))return res.status(403).json({error:'Oled vanglas.'});const now=Date.now();u.spyWindow=(Array.isArray(u.spyWindow)?u.spyWindow:[]).filter(ts=>Number.isFinite(ts)&&now-ts>=0&&now-ts<15*60000);if(u.spyWindow.length>=3)return res.status(429).json({error:'15 minuti jooksul saab spioneerida kuni 3 korda.'});if(!(u.spies[type]>0))return res.status(400).json({error:'Seda tüüpi spiooni pole.'});const spyTurns=100;if(!needTurns(u,spyTurns))return res.status(400).json({error:'Spioneerimiseks on vaja 100 käiku.'});u.spies[type]=Math.max(0,Number(u.spies[type]||0)-1);u.lastSpyAt[t.id]=now;u.spyWindow.push(now);const skill=SPY_TYPES[type]?.skill||.55,def=Math.min(.55,(t.guards||0)/100000+(t.securityLevel||1)/1200),success=Math.random()<clamp(skill-def,.12,.9);if(!success){if(Math.random()<.6)notify(t,'spy',`${u.name} proovis sind spioneerida, kuid jäi vahele.`);return ok(res,u,{message:'Spionaaž ebaõnnestus.'})}const intel={cash:t.cash,bankRange:t.bank<1e6?'alla 1M':t.bank<100e6?'1M–100M':t.bank<1e9?'100M–1B':'üle 1B',mafia:t.mafia,guards:t.guards,weapons:Object.values(t.weapons||{}).reduce((a,b)=>a+b,0),combat:combat(t),businesses:Object.keys(t.businesses||{}).length};ok(res,u,{message:'Spionaaž õnnestus.',intel})});
 app.post('/api/jail/bail-other',auth,(req,res)=>{const u=req.user,t=resolveUser(req.body.targetName||req.body.targetId);if(!t||!t.jailedUntil||t.jailedUntil<=Date.now())return res.status(400).json({error:'Mängija pole vanglas.'});const mins=Math.ceil((t.jailedUntil-Date.now())/60000),cost=Math.floor(Math.max(50000,mins*50000*(1+t.wanted/100))*market());if(u.cash<cost)return res.status(400).json({error:`Kautsjon maksab ${cost} €.`});u.cash-=cost;gameIncome(cost,'bail',u);t.jailedUntil=0;t.wanted=Math.max(0,t.wanted-10);notify(t,'jail',`${u.name} maksis sinu kautsjoni ${cost} € ja vabastas sind.`);ok(res,u,{message:`Maksid ${t.name} kautsjoni ${cost} €.`})});
 app.post('/api/business/workers',auth,(req,res)=>{const u=req.user,b=BIZ.find(x=>x.id===req.body.id),n=clamp(Math.floor(+req.body.n||1),1,1000);if(!b||(u.businesses[b.id]||0)<1)return res.status(400).json({error:'Firma puudub.'});const unit=Math.floor((db.settings.workerBasePrice||25000)*market()),cost=unit*n,turns=Math.max(5,n);if(u.cash<cost)return res.status(400).json({error:`Töötajad maksavad ${cost} €.`});if(!needTurns(u,turns))return res.status(400).json({error:`Vaja ${turns} käiku.`});u.cash-=cost;gameIncome(cost,'worker_hire',u);u.businessWorkers[b.id]=(u.businessWorkers[b.id]||0)+n;ok(res,u,{message:`${b.name}: +${n} töötajat.`})});
 app.post('/api/business/project',auth,(req,res)=>{const u=req.user,b=BIZ.find(x=>x.id===req.body.id),lvl=b?(u.businesses[b.id]||0):0;if(!b||lvl<1)return res.status(400).json({error:'Firma puudub.'});if(!freeToAct(u))return res.status(403).json({error:'Oled vanglas.'});if((u.wanted||0)>=90)return res.status(403).json({error:'Wanted on liiga kõrge uue projekti alustamiseks.'});const cur=u.businessProjects[b.id];if(cur&&cur.endsAt>Date.now())return res.status(400).json({error:'Selle firma projekt juba käib.'});const list=(BUSINESS_PROJECTS[b.id]||[]).map(p=>projectCfg(b.id,p)),z=list.find(x=>x.id===String(req.body.projectId||''))||list[0];if(!z)return res.status(400).json({error:'Projekt puudub.'});const workers=u.businessWorkers[b.id]||0,assigned=clamp(Math.floor(+req.body.workers||z.workers),z.workers,workers||z.workers);if(workers<z.workers)return res.status(400).json({error:`Vaja vähemalt ${z.workers} töötajat.`});const cost=Math.floor(b.base*Math.max(1,lvl)*z.costMult*market());if(u.cash<cost)return res.status(400).json({error:`Projektikulu ${cost} €.`});if(!needTurns(u,z.turns))return res.status(400).json({error:`Vaja ${z.turns} käiku.`});u.cash-=cost;gameIncome(cost,'business_project_cost',u);u.businessProjects[b.id]={id:crypto.randomUUID(),projectId:z.id,name:z.name,startedAt:Date.now(),endsAt:Date.now()+z.hours*3600000,cost,reward:Math.floor(cost*z.rewardMult*(1+.04*Math.max(0,lvl-1))*(1+Math.min(.30,Math.max(0,assigned-z.workers)*.02))),workers:assigned};delete u.businessRejected[b.id+'|'+z.id];ok(res,u,{message:`${b.name}: ${z.name} käivitatud ${z.hours} tunniks. Algkulu ${cost} €, töötajaid ${assigned}.`})});
@@ -1647,7 +2256,7 @@ function gameBankPublicState(u){cleanupGameBankRequests();
 }
 function activeGameBankLoansFor(u){return Object.values(db.gameBank?.loans||{}).filter(l=>l.userId===u.id&&['active','overdue'].includes(l.status)&&Number(l.unpaid||0)>0)}
 function issueAutoGameBankLoan(u,type,amount){
-  type=type==='turns'?'turns':'money';amount=Math.max(1,Math.floor(Number(amount)||0));const cfg=db.gameBank.autoLoan||{};
+  if(type==='turns')throw new Error('Käigulaenude väljastamine on eemaldatud.');type='money';amount=Math.max(1,Math.floor(Number(amount)||0));const cfg=db.gameBank.autoLoan||{};
   if(!cfg.enabled)throw new Error('Automaatlaen pole hetkel aktiivne.');
   if(gameBankOverdueLoans(u).length)throw new Error('Sul on Keskpanga võlg üle tähtaja.');
   if(activeGameBankLoansFor(u).length)throw new Error('Sul on juba aktiivne Keskpanga laen. Uus taotlus vajab admini ülevaatust.');
@@ -1661,6 +2270,7 @@ function issueAutoGameBankLoan(u,type,amount){
   notify(u,'loan',`Automaatne Keskpanga ${type==='money'?'raha':'käigu'}laen väljastati: ${amount}${type==='money'?' €':' käiku'}, ${rate}%, ${hours}h.`);return db.gameBank.loans[id];
 }
 function issueGameBankLoan(r){
+  if(r.type==='turns')throw new Error('Käigulaenude väljastamine on eemaldatud.');
   const u=byId(r.userId);if(!u)throw new Error('Mängijat ei leitud.');if(gameBankOverdueLoans(u).length)throw new Error('Sul on Keskpanga võlg üle tähtaja. Uut Keskpanga laenu ei saa enne võla tasumist.');
   const amount=Math.max(1,Math.floor(Number(r.offerAmount??r.amount)||0)),rate=clamp(Number(r.offerRate??r.rate)||0,0,500),hours=clamp(Math.floor(Number(r.offerHours??r.hours)||24),1,720),type=r.type==='turns'?'turns':'money';
   if(type==='money'){
@@ -1670,7 +2280,7 @@ function issueGameBankLoan(r){
     if(amount>Math.max(0,Math.floor(db.gameBank.turnsBalance||0)))throw new Error('Keskpanga käigufondis pole piisavalt käike.');
     db.gameBank.turnsBalance-=amount;u.turns=(Number(u.turns)||0)+amount;
   }
-  const id=String(db.nextIds.gameBankLoan++),totalDue=Math.ceil(amount*(1+rate/100)),now=Date.now();
+  if(type==='turns')throw new Error('Käigulaenude väljastamine on eemaldatud.');const id=String(db.nextIds.gameBankLoan++),totalDue=Math.ceil(amount*(1+rate/100)),now=Date.now();
   db.gameBank.loans[id]={id,requestId:r.id,userId:u.id,type,principal:amount,rate,totalDue,unpaid:totalDue,paid:0,hours,createdAt:now,due:now+hours*3600000,status:'active'};
   r.status='approved';r.approvedAt=now;r.loanId=id;r.finalAmount=amount;r.finalRate=rate;r.finalHours=hours;
   db.gameBank.log.unshift({time:now,type:type==='money'?'central_loan_money':'central_loan_turns',amount:-amount,userId:u.id,user:u.name});db.gameBank.log=db.gameBank.log.slice(0,3000);
@@ -1678,10 +2288,10 @@ function issueGameBankLoan(r){
   return db.gameBank.loans[id];
 }
 app.get('/api/game-bank/public',auth,(req,res)=>res.json(gameBankPublicState(req.user)));
-app.post('/api/game-bank/auto-request',auth,(req,res)=>{const u=req.user,type=req.body.type==='turns'?'turns':'money',amount=Math.max(1,Math.floor(Number(req.body.amount)||0));try{const loan=issueAutoGameBankLoan(u,type,amount);saveNow();return res.json({ok:true,message:`Automaatlaen väljastatud: ${amount}${type==='money'?' €':' käiku'}.`,loan,user:pub(u)})}catch(e){return res.status(400).json({error:e.message})}});
+app.post('/api/game-bank/auto-request',auth,(req,res)=>{if(req.body.type==='turns')return res.status(410).json({error:'Keskpanga käigulaene enam ei väljastata.'});const u=req.user,type=req.body.type==='turns'?'turns':'money',amount=Math.max(1,Math.floor(Number(req.body.amount)||0));try{const loan=issueAutoGameBankLoan(u,type,amount);saveNow();return res.json({ok:true,message:`Automaatlaen väljastatud: ${amount}${type==='money'?' €':' käiku'}.`,loan,user:pub(u)})}catch(e){return res.status(400).json({error:e.message})}});
 app.post('/api/game-bank/request-delete',auth,(req,res)=>{const r=db.gameBank.loanRequests[String(req.body.id||'')];if(!r||r.userId!==req.user.id)return res.status(404).json({error:'Taotlust ei leitud.'});if(['pending','countered'].includes(r.status))return res.status(400).json({error:'Aktiivset taotlust ei saa kustutada.'});delete db.gameBank.loanRequests[r.id];saveNow();res.json({ok:true,message:'Taotluse kirje eemaldatud.'})});
-app.post('/api/game-bank/request',auth,(req,res)=>{const u=req.user;if(gameBankOverdueLoans(u).length)return res.status(403).json({error:'Sul on Keskpanga laen üle tähtaja. Uut laenu ei saa enne võla tasumist võtta.'});const type=req.body.type==='turns'?'turns':'money',amount=Math.max(1,Math.floor(Number(req.body.amount)||0)),rate=clamp(Number(req.body.rate)||0,0,500),hours=clamp(Math.floor(Number(req.body.hours)||24),1,720);if(Object.values(db.gameBank.loanRequests||{}).some(x=>x.userId===u.id&&['pending','countered'].includes(x.status)))return res.status(400).json({error:'Sul on juba ootel keskpanga laenutaotlus või vastupakkumine.'});const id=String(db.nextIds.gameBankRequest++);db.gameBank.loanRequests[id]={id,userId:u.id,type,amount,rate,hours,status:'pending',createdAt:Date.now()};for(const staff of Object.values(db.users).filter(x=>['owner','admin'].includes(x.role))) notify(staff,'admin',`${u.name} saatis keskpanka ${type==='money'?'raha':'käikude'} laenutaotluse.`);saveNow();res.json({ok:true,message:'Laenutaotlus saadeti mängujuhile kinnitamiseks.'})});
-app.post('/api/game-bank/respond-counter',auth,(req,res)=>{const r=db.gameBank.loanRequests[String(req.body.id||'')];if(!r||r.userId!==req.user.id||r.status!=='countered')return res.status(404).json({error:'Aktiivset vastupakkumist ei leitud.'});if(!req.body.accept){r.status='rejected_by_user';r.respondedAt=Date.now();saveNow();return res.json({ok:true,message:'Lükkasid keskpanga vastupakkumise tagasi.'})}try{issueGameBankLoan(r);saveNow();return res.json({ok:true,message:'Vastupakkumine kinnitatud ja laen väljastatud.',user:pub(req.user)})}catch(e){return res.status(400).json({error:e.message})}});
+app.post('/api/game-bank/request',auth,(req,res)=>{if(req.body.type==='turns')return res.status(410).json({error:'Keskpanga käigulaene enam ei väljastata.'});const u=req.user;if(gameBankOverdueLoans(u).length)return res.status(403).json({error:'Sul on Keskpanga laen üle tähtaja. Uut laenu ei saa enne võla tasumist võtta.'});const type=req.body.type==='turns'?'turns':'money',amount=Math.max(1,Math.floor(Number(req.body.amount)||0)),rate=clamp(Number(req.body.rate)||0,0,500),hours=clamp(Math.floor(Number(req.body.hours)||24),1,720);if(Object.values(db.gameBank.loanRequests||{}).some(x=>x.userId===u.id&&['pending','countered'].includes(x.status)))return res.status(400).json({error:'Sul on juba ootel keskpanga laenutaotlus või vastupakkumine.'});const id=String(db.nextIds.gameBankRequest++);db.gameBank.loanRequests[id]={id,userId:u.id,type,amount,rate,hours,status:'pending',createdAt:Date.now()};for(const staff of Object.values(db.users).filter(x=>['owner','admin'].includes(x.role))) notify(staff,'admin',`${u.name} saatis keskpanka ${type==='money'?'raha':'käikude'} laenutaotluse.`);saveNow();res.json({ok:true,message:'Laenutaotlus saadeti mängujuhile kinnitamiseks.'})});
+app.post('/api/game-bank/respond-counter',auth,(req,res)=>{const r=db.gameBank.loanRequests[String(req.body.id||'')];if(r?.type==='turns')return res.status(410).json({error:'Käigulaenude väljastamine on eemaldatud.'});if(!r||r.userId!==req.user.id||r.status!=='countered')return res.status(404).json({error:'Aktiivset vastupakkumist ei leitud.'});if(!req.body.accept){r.status='rejected_by_user';r.respondedAt=Date.now();saveNow();return res.json({ok:true,message:'Lükkasid keskpanga vastupakkumise tagasi.'})}try{issueGameBankLoan(r);saveNow();return res.json({ok:true,message:'Vastupakkumine kinnitatud ja laen väljastatud.',user:pub(req.user)})}catch(e){return res.status(400).json({error:e.message})}});
 app.post('/api/game-bank/repay',auth,(req,res)=>{const u=req.user,l=db.gameBank.loans[String(req.body.id||'')];if(!l||l.userId!==u.id||!['active','overdue'].includes(l.status))return res.status(404).json({error:'Aktiivset keskpanga laenu ei leitud.'});const due=Math.max(0,Math.floor(Number(l.unpaid)||0));if(due<=0)return res.status(400).json({error:'Laen on juba tasutud.'});const want=req.body.all?due:Math.max(1,Math.floor(Number(req.body.amount)||0));let pay=0;if(l.type==='money'){const available=Math.max(0,Math.floor(Number(u.cash)||0))+Math.max(0,Math.floor(Number(u.bank)||0));pay=Math.min(want,due,available);let left=pay,fromBank=Math.min(left,Math.max(0,Math.floor(Number(u.bank)||0)));u.bank-=fromBank;left-=fromBank;let fromCash=Math.min(left,Math.max(0,Math.floor(Number(u.cash)||0)));u.cash-=fromCash;left-=fromCash;pay-=left;if(l.autoLoan)db.gameBank.autoMoneyFund=(Number(db.gameBank.autoMoneyFund)||0)+pay;else db.gameBank.balance=(Number(db.gameBank.balance)||0)+pay;}else{pay=Math.min(want,due,Math.max(0,Math.floor(Number(u.turns)||0)));u.turns-=pay;if(l.autoLoan)db.gameBank.autoTurnsFund=(Number(db.gameBank.autoTurnsFund)||0)+pay;else db.gameBank.turnsBalance=(Number(db.gameBank.turnsBalance)||0)+pay;}if(pay<=0)return res.status(400).json({error:l.type==='money'?'Sul pole tagasimakseks raha.':'Sul pole tagasimakseks käike.'});l.unpaid=Math.max(0,due-pay);l.paid=(Number(l.paid)||0)+pay;l.lastPaymentAt=Date.now();if(l.unpaid<=0){l.unpaid=0;l.status='repaid';l.repaidAt=Date.now()}db.gameBank.log.unshift({time:Date.now(),type:l.type==='money'?'central_loan_repay_money':'central_loan_repay_turns',amount:pay,userId:u.id,user:u.name});db.gameBank.log=db.gameBank.log.slice(0,3000);saveNow();res.json({ok:true,message:l.status==='repaid'?'Keskpanga laen on täielikult tasutud.':`Tagasimakse tehtud. Jääk ${l.unpaid}${l.type==='money'?' €':' käiku'}.`,user:pub(u)})});
 // V6.96: loetav, ainult adminile nähtav Keskpanga rahaliikumiste ülevaade.
 // Logi sisaldab ka informatiivseid sündmusi ning käike: neid ei tohi lugeda eurodeks.
@@ -1718,11 +2328,307 @@ app.post('/api/admin/game-bank/auto',auth,admin,(req,res)=>{
   else return res.status(400).json({error:'Vigane tegevus.'});saveNow();res.json({ok:true,balance:db.gameBank.balance,turnsBalance:db.gameBank.turnsBalance,autoMoneyFund:db.gameBank.autoMoneyFund,autoTurnsFund:db.gameBank.autoTurnsFund,autoLoan:cfg});
 });
 app.post('/api/admin/game-bank',auth,admin,(req,res)=>{const amount=Math.max(0,Math.floor(+req.body.amount||0)),action=req.body.action,t=resolveUser(req.body.targetName||req.body.targetId);if(action==='destroy'){if(amount>db.gameBank.balance)return res.status(400).json({error:'Kassas pole piisavalt.'});db.gameBank.balance-=amount;db.gameBank.log.unshift({time:Date.now(),type:'game_bank_admin_destroy',amount:-amount,user:req.user.name});db.gameBank.log=db.gameBank.log.slice(0,3000);audit(req.user,'game_bank_destroy','gameBank',{amount})}else if(action==='send'){if(!t||amount>db.gameBank.balance)return res.status(400).json({error:'Vigane siht/summa.'});db.gameBank.balance-=amount;db.gameBank.log.unshift({time:Date.now(),type:'game_bank_admin_send',amount:-amount,user:t.name});db.gameBank.log=db.gameBank.log.slice(0,3000);t.cash+=amount;notify(t,'admin',`Mängu keskpangast saadeti sulle ${amount} €.`);audit(req.user,'game_bank_send',t.id,{amount})}else if(action==='add_turns'){db.gameBank.turnsBalance=(Number(db.gameBank.turnsBalance)||0)+amount;audit(req.user,'game_bank_add_turns','gameBank',{amount})}else if(action==='destroy_turns'){if(amount>db.gameBank.turnsBalance)return res.status(400).json({error:'Käigufondis pole piisavalt.'});db.gameBank.turnsBalance-=amount;audit(req.user,'game_bank_destroy_turns','gameBank',{amount})}else return res.status(400).json({error:'Vigane tegevus.'});saveNow();res.json({ok:true,balance:db.gameBank.balance,turnsBalance:db.gameBank.turnsBalance})});
-function resetPlayerData(t){t.cash=2500000;t.bank=0;t.turns=300;t.hp=100;t.level=1;t.xp=0;t.rep=0;t.wanted=0;t.jailedUntil=0;t.education=0;t.educationProgress=0;t.securityLevel=1;t.mafiaLevel=1;t.propertyLevel=0;t.mafia=0;t.guards=0;t.weapons={};t.crypto=0;t.city='Paide';t.businesses={};t.businessProjects={};t.businessRejected={};t.carLicense=0;t.cars=[];t.gangId=null;t.spies={finnish:0,ukrainian:0,russian:0};t.intelLevel=0;t.lastSpyAt={};t.bodyguard=null;t.bodyguardUntil=0;t.jobId=null;t.lastSalaryAt=Date.now();t.guardingClient=null;t.guardingUntil=0;t.businessWorkers={};t.nightlife={venues:[],nextVenueId:1};t.stats={wins:0,losses:0,robbed:0,pokerWins:0,crimes:0,operations:0}}
-app.post('/api/admin/reset-user',auth,admin,(req,res)=>{const t=byId(req.body.id);if(!t)return res.status(404).json({error:'Mängijat pole.'});if(t.role==='owner'&&req.user.role!=='owner')return res.status(403).json({error:'Ownerit muuta ei saa.'});snap('Enne kasutaja resetti',req.user);resetPlayerData(t);audit(req.user,'reset_user',t.id);saveNow();notify(t,'admin','Admin resetis sinu mänguprogressi algseisu.');res.json({ok:true})});
-app.post('/api/admin/reset-all',auth,admin,(req,res)=>{if(req.user.role!=='owner')return res.status(403).json({error:'Ainult owner.'});snap('Enne kõigi mängijate resetti',req.user);let n=0;for(const t of Object.values(db.users)){if(t.role==='owner')continue;resetPlayerData(t);n++}audit(req.user,'reset_all','all',{count:n});saveNow();io.emit('toast','Mängijate progress resetiti.');res.json({ok:true,count:n})});
+// v8.0 audit: a reset must remove BOTH directions of the user <-> gang link.
+// Otherwise /api/gang/create and /api/gang/join still see old membership;
+// normalize() can even attach a reset leader to their former gang on restart.
+function detachPlayerFromGangsForReset(t){
+  const userId=t.id;
+  for(const [gangId,g] of Object.entries(db.gangs||{})){
+    if(g.leader===userId){
+      // User requirement: resetting the leader dissolves the WHOLE gang.
+      // Release everyone pointing at it, including members missing from g.members.
+      for(const member of Object.values(db.users||{}))if(member.gangId===gangId)member.gangId=null;
+      delete db.gangs[gangId];
+      continue;
+    }
+    // Prune stale membership from ANY gang, even if t.gangId was already null.
+    g.members=(g.members||[]).filter(id=>id!==userId);
+    g.assistants=(g.assistants||[]).filter(id=>id!==userId);
+    for(const field of ['donations','attackStats','attackWins','attackLosses']){
+      if(g[field] && typeof g[field]==='object')delete g[field][userId];
+    }
+    for(const day of g.attackHistory||[]){
+      for(const field of ['attacks','wins','losses']){
+        if(day[field] && typeof day[field]==='object')delete day[field][userId];
+      }
+    }
+    // Financial/audit history (g.log, g.rewards, g.forum) stays intact.
+  }
+  t.gangId=null;
+}
+// v8 audit stage 4: READ-ONLY preflight. This does not settle or discard obligations.
+// A season/user reset may not silently destroy deposits, reserved auction money,
+// active contracts, other players' loans, or externally stored auto-business state.
+function resetPreflight(targetIds){
+  const ids=new Set([...targetIds].map(String));
+  const issues=[];const seen=new Set();
+  const involves=(id)=>id!=null&&ids.has(String(id));
+  function flag(code,ref,users,detail=''){
+    const k=code+':'+String(ref);
+    if(seen.has(k))return;seen.add(k);
+    issues.push({code,ref:String(ref),users:[...new Set(users.filter(involves).map(String))],detail});
+  }
+  for(const u of Object.values(db.users||{})){
+    if(!involves(u.id))continue;
+    const a=u.autoTrade;
+    if(a&&typeof a==='object'){
+      const perf=a.performance||{};
+      if((Number(a.balance)||0)!==0)flag('auto_business_balance',u.id,[u.id],'Autoäri eraldi kontojääk peab saama selge käsitluse.');
+      if(a.starterGrantV684===true||a.city||(Number(a.yard)||0)>3||(Number(a.garage)||0)>1)flag('auto_business_state',u.id,[u.id],'Autoäri algboonus, tegevuskoht ja laiendused vajavad reseti käsitlust.');
+      if(['sold','profit','revenue','frauds'].some(k=>(Number(perf[k])||0)!==0)||((a.history||[]).length>0&&Number(a.fines||0)!==0))
+        flag('auto_business_history',u.id,[u.id],'Autoäri skoor ja ajalugu ei nulli praeguse resetiga.');
+    }
+    if((u.nightlife?.venues||[]).some(v=>Number(v.account||0)>0))
+      flag('nightlife_business_balance',u.id,[u.id],'Ööelu ettevõtte kontol olev raha vajab reseti arvestust.');
+    if(Number(u.maintenanceDebt||0)>0)
+      flag('maintenance_debt',u.id,[u.id],'Kõrvalkulude võlg tuleb enne resetti fikseerida.');
+    const bank=db.playerBanks?.[u.id];
+    if(bank)flag('owned_player_bank',u.id,[u.id],'Mängijapanga kapital ja laenud vajavad sulgemise arvestust.');
+    // Active bodyguard links can exist on the counterparty even after one side resets.
+    if(u.bodyguard&&Number(u.bodyguardUntil)>Date.now())flag('bodyguard_active_client',u.id,[u.id,u.bodyguard]);
+    if(u.guardingClient&&Number(u.guardingUntil)>Date.now())flag('bodyguard_active_guard',u.id,[u.id,u.guardingClient]);
+  }
+  for(const u of Object.values(db.users||{})){
+    if(involves(u.id))continue;
+    if(involves(u.bodyguard)&&Number(u.bodyguardUntil)>Date.now())flag('counterparty_bodyguard',u.id,[u.bodyguard]);
+    if(involves(u.guardingClient)&&Number(u.guardingUntil)>Date.now())flag('counterparty_guard',u.id,[u.guardingClient]);
+  }
+  for(const [k,l] of Object.entries(db.loans||{})){
+    if(!['active','overdue','pending'].includes(String(l.status)))continue;
+    if(involves(l.borrower)||involves(l.bankOwner))flag('player_loan',k,[l.borrower,l.bankOwner],'Aktiivne laen puudutab laenuvõtjat ja panga omanikku.');
+  }
+  for(const [k,l] of Object.entries(db.gameBank?.loans||{})){
+    if(['active','overdue'].includes(String(l.status))&&involves(l.userId))flag('central_loan',k,[l.userId]);
+  }
+  for(const [k,r] of Object.entries(db.gameBank?.loanRequests||{})){
+    if(['pending','countered'].includes(String(r.status))&&involves(r.userId))flag('central_loan_request',k,[r.userId]);
+  }
+  for(const [k,l] of Object.entries(db.carListings||{}))if(involves(l.seller))flag('car_listing',k,[l.seller]);
+  for(const [brand,a] of Object.entries(db.autoWorld?.auctions||{})){
+    if(involves(a.holder)&&Number(a.until)>Date.now())flag('dealer_contract',brand,[a.holder]);
+    for(const bid of a.bids||[])if(involves(bid.userId))flag('dealer_reserved_bid',brand+':'+bid.userId,[bid.userId],'Pakkumine võib sisaldada juba kontolt võetud raha.');
+  }
+  for(const t of db.autoWorld?.militaryTenders||[]){
+    for(const bid of t.bids||[])if(involves(bid.userId))flag('military_reserved_bid',t.id+':'+bid.userId,[bid.userId]);
+  }
+  for(const [k,b] of Object.entries(db.bounties||{})){
+    if(b.active&&(involves(b.posterId)||involves(b.targetId)))flag('active_bounty',k,[b.posterId,b.targetId]);
+  }
+  for(const [k,o] of Object.entries(db.bodyguardOffers||{})){
+    if(String(o.status)==='pending'&&(involves(o.clientId)||involves(o.guardId)))flag('pending_bodyguard_offer',k,[o.clientId,o.guardId]);
+  }
+  const L=db.settings?.lottery||{};
+  if(L.active){
+    if(involves(L.organizerId))flag('active_lottery_organizer','current',[L.organizerId]);
+    for(const [userId,count] of Object.entries(L.tickets||{}))if(involves(userId)&&Number(count)>0)flag('active_lottery_tickets',userId,[userId]);
+  }
+  const counts={};for(const issue of issues)counts[issue.code]=(counts[issue.code]||0)+1;
+  return {safe:issues.length===0,affectedUsers:ids.size,issueCount:issues.length,counts,issues};
+}
+// v8 audit stage 5: detailed READ-ONLY financial exposure report.
+// This is not a settlement implementation. The report deliberately leaves all
+// cross-user obligations unresolved and never treats asset values as liquid funds.
+function resetFinancialExposure(targetIds){
+  const ids=new Set([...targetIds].map(String));
+  const now=Date.now(),rows=[];
+  const hit=id=>id!=null&&ids.has(String(id));
+  const money=v=>{const n=Number(v);return Number.isFinite(n)&&n>0?Math.floor(n):0;};
+  function add(kind,ref,parties,amount=0,unit='EUR',source='unknown',note=''){
+    const all=[...new Set((parties||[]).filter(x=>x!=null&&String(x)!=='').map(String))];
+    if(!all.some(hit))return;
+    const retained=all.filter(x=>!ids.has(x));
+    rows.push({kind,ref:String(ref),targetUsers:all.filter(hit),retainedUsers:retained,
+      boundary:retained.length?'retained_counterparty':'within_reset',amount:money(amount),unit,source,note,
+      disposition:'UNRESOLVED_DO_NOT_RESET'});
+  }
+  for(const u of Object.values(db.users||{})){
+    if(!hit(u.id))continue;
+    add('cash',u.id,[u.id],u.cash,'EUR','user.cash','Lähtesaldona; see pole lubadus väljamakse kohta.');
+    add('bank_balance',u.id,[u.id],u.bank,'EUR','user.bank');
+    add('turns',u.id,[u.id],u.turns,'TURNS','user.turns');
+    add('auto_business_balance',u.id,[u.id],u.autoTrade?.balance,'EUR','user.autoTrade.balance');
+    if(u.autoTrade&&((u.autoTrade.city||'')!==''||(u.cars||[]).length))
+      add('owned_vehicles',u.id,[u.id],(u.cars||[]).length,'COUNT','user.cars','Autode loend ei ole rahaline nõue.');
+    for(const v of (u.nightlife?.venues||[])){
+      add('nightlife_account',`${u.id}:${v.id||v.name||''}`,[u.id],v.account,'EUR','user.nightlife.venues[].account');
+    }
+  }
+  for(const [id,b] of Object.entries(db.playerBanks||{})){
+    const bankOwner=String(b.owner||id);
+    add('player_bank_capital',id,[bankOwner],b.capital,'EUR','playerBanks[].capital',
+      'Kapital ei ole sama mis laenunõuete kogusumma; neid ei tohi kokku liita.');
+  }
+  for(const [id,l] of Object.entries(db.loans||{})){
+    if(!['active','overdue','pending'].includes(String(l.status)))continue;
+    add('player_loan_unpaid',id,[l.borrower,l.bankOwner],l.unpaid,'EUR','loans[].unpaid',
+      'Mängija panga nõue. Lõpetamise/ülekande reegel kinnitamata.');
+  }
+  for(const [id,l] of Object.entries(db.gameBank?.loans||{})){
+    if(!['active','overdue'].includes(String(l.status)))continue;
+    add('central_bank_loan',id,[l.userId],l.unpaid,l.type==='turns'?'TURNS':'EUR',
+      'gameBank.loans[].unpaid','Keskpank jääb hooajaresetist välja: süsteemipoolne nõue.');
+  }
+  for(const [id,r] of Object.entries(db.gameBank?.loanRequests||{})){
+    if(['pending','countered'].includes(String(r.status)))
+      add('pending_central_loan',id,[r.userId],r.amount,r.type==='turns'?'TURNS':'EUR','gameBank.loanRequests',
+        'Taotlus pole veel välja makstud; summa ei pruugi olla kohustus.');
+  }
+  for(const [id,l] of Object.entries(db.carListings||{})){
+    add('listed_car',id,[l.seller],1,'COUNT','carListings',
+      'Auto asub eraldi kuulutuses, mitte user.cars nimekirjas.');
+  }
+  for(const [brand,a] of Object.entries(db.autoWorld?.auctions||{})){
+    if(a.holder&&Number(a.until)>now)add('dealer_right',brand,[a.holder],1,'COUNT','autoWorld.auctions[].holder');
+    for(const bid of a.bids||[]){
+      const source=bid.source==='autoTrade'?'autoTrade.balance':'legacy_cash';
+      add('dealer_reserved_bid',`${brand}:${bid.userId}`,[bid.userId],bid.amount,'EUR',source,
+        'Pakkumine on juba konto saldost maha võetud; lähtesaldole juurde liites väldi topeltarvestust.');
+    }
+  }
+  for(const t of db.autoWorld?.militaryTenders||[]){
+    if(t.status&&t.status!=='open')continue;
+    for(const bid of t.bids||[])add('military_reserved_bid',`${t.id}:${bid.userId}`,[bid.userId],bid.amount,'EUR',
+      'autoTrade.balance','Hanke raha on autoäri kontolt broneeritud.');
+  }
+  const L=db.settings?.lottery||{};
+  if(L.active){
+    const all=Object.entries(L.tickets||{}).filter(([,n])=>money(n)>0).map(([id])=>id);
+    add('active_lottery_pot','current',[L.organizerId,...all],L.pot,'EUR','settings.lottery.pot',
+      'Ühine võidufond; mitte iga piletiomaniku eraldi varandus.');
+    for(const [id,n] of Object.entries(L.tickets||{}))
+      add('lottery_tickets',id,[id],n,'COUNT','settings.lottery.tickets');
+  }
+  for(const [id,b] of Object.entries(db.bounties||{}))if(b.active)
+    add('active_bounty',id,[b.posterId,b.targetId],b.reward||b.amount,'EUR','bounties',
+      'Ei ole kinnitatud, kas tasu on ette broneeritud.');
+  for(const [id,o] of Object.entries(db.bodyguardOffers||{}))if(o.status==='pending')
+    add('pending_bodyguard_offer',id,[o.clientId,o.guardId],o.amount,'EUR','bodyguardOffers',
+      'Pakkumine ei ole enne vastuvõtmist raha kontolt võtnud.');
+  for(const u of Object.values(db.users||{})){
+    if(u.bodyguard&&Number(u.bodyguardUntil)>now)
+      add('active_bodyguard',u.id,[u.id,u.bodyguard],1,'COUNT','users[].bodyguard');
+  }
+  const byKind={};let retainedCounterparties=0;
+  for(const r of rows){
+    const x=byKind[r.kind]||(byKind[r.kind]={count:0,amount:0,unit:r.unit});
+    x.count++;x.amount+=r.amount;
+    if(r.boundary==='retained_counterparty')retainedCounterparties++;
+  }
+  return {readOnly:true,resetApproved:false,targetCount:ids.size,entryCount:rows.length,
+    retainedCounterparties,byKind,rows,disclaimer:'Summad on kategooriate lõikes. Neid EI TOHI liita kokku: pangakapital, laenunõuded, oksjoniraha ja võidufond on erinevad arvestused.'};
+}
+// v8 audit stage 6: READ-ONLY dry run of the reset AS CURRENTLY IMPLEMENTED.
+// Deliberately does not settle debts, refund bids, execute resetPlayerData,
+// persist state or approve release. Figures are per-account bookkeeping,
+// not a claim that total game wealth can be represented by a single sum.
+function resetDryRun(targetIds){
+  const unique=[...new Set([...targetIds].map(String))];
+  const users=Object.values(db.users||{});
+  const matches=users.filter(u=>unique.includes(String(u.id)));
+  const preflight=resetPreflight(unique);
+  const exposure=resetFinancialExposure(unique);
+  const openingGrant=2500000;
+  const money=n=>Number.isFinite(Number(n))?Math.max(0,Math.floor(Number(n))):0;
+  const profiles=matches.map(u=>{
+    const oldCash=money(u.cash),oldBank=money(u.bank),oldTurns=money(u.turns);
+    const before={cash:oldCash,bank:oldBank,turns:oldTurns};
+    const projected={cash:openingGrant,bank:0,turns:300};
+    return {userId:String(u.id),role:String(u.role||'player'),before,projected,
+      cashBankDeltaEUR:openingGrant-oldCash-oldBank,turnsDelta:300-oldTurns,
+      // Listed here because resetPlayerData does not currently touch them.
+      remainingExternalRecords:{
+        autoBusinessBalanceEUR:money(u.autoTrade?.balance),
+        ownedPlayerBankCapitalEUR:money(db.playerBanks?.[u.id]?.capital),
+        nightlifeAccountBalancesEUR:(u.nightlife?.venues||[]).reduce((sum,v)=>sum+money(v.account),0),
+        activeCarListings:Object.values(db.carListings||{}).filter(x=>String(x.seller)===String(u.id)).length
+      }};
+  });
+  const unaddressedByCurrentReset=exposure.rows.filter(r=>
+    !['cash','bank_balance','turns','owned_vehicles','nightlife_account'].includes(r.kind));
+  const grouped={};
+  for(const r of unaddressedByCurrentReset){
+    const kind=r.kind;
+    if(!grouped[kind])grouped[kind]={count:0,eur:0,turns:0,records:0,retainedCounterparties:0};
+    const x=grouped[kind];x.count++;
+    if(r.unit==='EUR')x.eur+=r.amount;
+    else if(r.unit==='TURNS')x.turns+=r.amount;
+    else x.records+=r.amount;
+    if(r.boundary==='retained_counterparty')x.retainedCounterparties++;
+  }
+  // 'nightlife_account' is cleared by resetPlayerData, but its money is
+  // not refunded anywhere. It is a LOSS risk, not an obligation that survives.
+  const balancesAtRisk=profiles.map(p=>({userId:p.userId,
+    removedCashAndBankEUR:p.before.cash+p.before.bank,
+    projectedStarterCashEUR:p.projected.cash,
+    nightlifeBalanceClearedEUR:p.remainingExternalRecords.nightlifeAccountBalancesEUR,
+    netCashBankChangeEUR:p.cashBankDeltaEUR,
+    untouchedAutoBusinessBalanceEUR:p.remainingExternalRecords.autoBusinessBalanceEUR,
+    untouchedOwnedBankCapitalEUR:p.remainingExternalRecords.ownedPlayerBankCapitalEUR}));
+  const savedOwners=users.filter(u=>String(u.role)==='owner'&&!unique.includes(String(u.id)))
+    .map(u=>({userId:String(u.id),cash:money(u.cash),bank:money(u.bank)}));
+  const externalFundsPresent=profiles.some(p=>
+    p.remainingExternalRecords.autoBusinessBalanceEUR>0||
+    p.remainingExternalRecords.ownedPlayerBankCapitalEUR>0||
+    p.remainingExternalRecords.activeCarListings>0);
+  const hasCrossBoundary=exposure.rows.some(r=>r.boundary==='retained_counterparty');
+  const hasOpenObligations=unaddressedByCurrentReset.length>0;
+  const needsLedgerExplanation=profiles.some(p=>p.cashBankDeltaEUR!==0||
+    p.remainingExternalRecords.nightlifeAccountBalancesEUR>0);
+  return {readOnly:true,releaseApproved:false,resetExecuted:false,blocked:true,
+    selectedUserCount:unique.length,matchedUserCount:matches.length,
+    missingUserIds:unique.filter(id=>!matches.some(u=>String(u.id)===id)),
+    retainedOwners:savedOwners,profiles,balancesAtRisk,
+    outstandingByKind:grouped,unresolvedEntries:unaddressedByCurrentReset.length,
+    crossBoundaryEntries:exposure.retainedCounterparties,
+    checks:{noUnresolvedPreflightIssues:preflight.safe,
+      noRemainingExternalFunds:!externalFundsPresent,
+      noCrossBoundaryObligations:!hasCrossBoundary,
+      noPersistentExternalRecords:!hasOpenObligations,
+      noUnexplainedLocalBalanceChanges:!needsLedgerExplanation},
+    nextSteps:['Kinnita laenude lõpetamise reeglid ning säilivate kontode nõuete käsitlus.',
+      'Taga, et auto- ja militaaroksjonite broneeringud tagastatakse täpselt üks kord ja õigele kontole.',
+      'Lõpeta või kanna üle avatud automüügid, loterii ja ihukaitsjalepingud.',
+      'Arvesta ööelu kontojäägid ja autoäri/pangakapital enne kontode nullimist.',
+      'Katseta eraldatud PostgreSQL-is transaktsiooni ebaõnnestumist ja varukoopiast taastamist.'],
+    warning:'See on ainult kirjeldav kuivläbimäng praeguse resetPlayerData loogika põhjal. Ükski saldo ega leping ei muutu; reset jääb HTTP 423 lukku.'};
+}
+// Deliberately closed in this audit build: even zero preflight issues do not yet
+// prove an atomic PostgreSQL commit and an external restore drill.
+const RESET_RELEASE_APPROVED=false;
+function resetPlayerData(t){detachPlayerFromGangsForReset(t);const now=Date.now();t.cash=2500000;t.bank=0;t.turns=300;t.hp=100;t.level=1;t.xp=0;t.rep=0;t.wanted=0;t.jailedUntil=0;t.education=0;t.educationProgress=0;t.securityLevel=1;t.mafiaLevel=1;t.propertyLevel=0;t.mafia=0;t.guards=0;t.weapons={};t.crypto=0;t.city='Paide';t.businesses={};t.businessProjects={};t.businessRejected={};t.carLicense=0;t.cars=[];t.gangId=null;t.spies={finnish:0,ukrainian:0,russian:0};t.intelLevel=0;t.lastSpyAt={};t.bodyguard=null;t.bodyguardUntil=0;t.jobId=null;t.lastSalaryAt=Date.now();t.guardingClient=null;t.guardingUntil=0;t.businessWorkers={};t.nightlife={venues:[],nextVenueId:1};t.stats={wins:0,losses:0,robbed:0,pokerWins:0,crimes:0,operations:0};
+  // Fields overlooked by the original reset could retain production inventory,
+  // raid throttles and maintenance debt despite the account showing level 1.
+  t.production={capacityLevel:1,speedLevel:1,materials:{plant:0,chem:0,pack:0},stock:0,nextAt:0,totalMade:0,totalSold:0};
+  t.pvpHits={};t.maintenanceDue=now+86400000;t.maintenanceDebt=0;t.maintenanceLastBill=null;
+  t.lastTurnAt=now;
+}
+// Only the owner may inspect bot-player cleanup. NO live deletion endpoint exists.
+app.get('/api/admin/bot-cleanup-preview',auth,admin,(req,res)=>{
+  if(req.user.role!=='owner')return res.status(403).json({error:'Ainult owner saab botikontode eemaldamist kontrollida.'});
+  try{return res.json({ok:true,cleanupExecutable:false,preview:__v8BotCleanup.planBotCleanup(db)})}
+  catch(e){return res.status(500).json({error:'Botide eelkontroll ebaõnnestus.'})}
+});
+// v8 season reset PREVIEW: complete copy-on-write wipe covers bot players,
+// mixed test obligations, loans, bids, lotteries, gangs, business accounts,
+// owner login preservation and NPC car-market retention.
+// READ-ONLY: deliberately no live execution until all game writers share an
+// exclusive, durable PostgreSQL commit path and restore test is completed.
+app.get('/api/admin/season-reset-preview',auth,admin,(req,res)=>{
+  if(req.user.role!=='owner')return res.status(403).json({error:'Ainult owner.'});
+  try{
+    const {preflightSeasonReset}=__v8SeasonReset;
+    const plan=preflightSeasonReset(db);
+    return res.json({ok:true,executionEnabled:false,preview:plan,
+      note:'Eraldi hooajareseti puhastusloogika on testitud, kuid päris reset on lukus kuni andmebaasi eksklusiivse salvestuse ja taastamise kontrollini.'});
+  }catch(e){console.error('[SEASON RESET PREVIEW]',e);return res.status(500).json({error:'Hooajareseti eelkontroll ebaõnnestus.'})}
+});
+app.get('/api/admin/reset-dry-run',auth,admin,(req,res)=>{const id=String(req.query.id||'');if(id){const t=byId(id);if(!t)return res.status(404).json({error:'Mängijat pole.'});return res.json({ok:true,dryRun:resetDryRun([t.id])})}if(req.user.role!=='owner')return res.status(403).json({error:'Hooajareseti kuivläbimäng ainult ownerile.'});return res.json({ok:true,dryRun:resetDryRun(Object.values(db.users).filter(t=>t.role!=='owner').map(t=>t.id))})});
+app.get('/api/admin/reset-financial-preview',auth,admin,(req,res)=>{const id=String(req.query.id||'');if(id){const t=byId(id);if(!t)return res.status(404).json({error:'Mängijat pole.'});return res.json({ok:true,preview:resetFinancialExposure([t.id])})}if(req.user.role!=='owner')return res.status(403).json({error:'Hooajareseti aruanne ainult ownerile.'});return res.json({ok:true,preview:resetFinancialExposure(Object.values(db.users).filter(t=>t.role!=='owner').map(t=>t.id))})});
+app.get('/api/admin/reset-preflight',auth,admin,(req,res)=>{const id=String(req.query.id||'');if(id){const t=byId(id);if(!t)return res.status(404).json({error:'Mängijat pole.'});return res.json({ok:true,approved:RESET_RELEASE_APPROVED,preflight:resetPreflight([t.id])})}if(req.user.role!=='owner')return res.status(403).json({error:'Hooajareseti eelvaade ainult ownerile.'});return res.json({ok:true,approved:RESET_RELEASE_APPROVED,preflight:resetPreflight(Object.values(db.users).filter(t=>t.role!=='owner').map(t=>t.id))})});
+app.post('/api/admin/reset-user',auth,admin,(req,res)=>{const t=byId(req.body.id);if(!t)return res.status(404).json({error:'Mängijat pole.'});const preview=resetPreflight([t.id]);if(!RESET_RELEASE_APPROVED||!preview.safe)return res.status(423).json({error:'Reset on v8 auditiversioonis lukustatud. Kontrolli kohustuste aruannet ja püsisalvestust enne avamist.',preflight:preview});if(t.role==='owner'&&req.user.role!=='owner')return res.status(403).json({error:'Ownerit muuta ei saa.'});snap('Enne kasutaja resetti',req.user);resetPlayerData(t);audit(req.user,'reset_user',t.id);saveNow();notify(t,'admin','Admin resetis sinu mänguprogressi algseisu.');res.json({ok:true})});
+app.post('/api/admin/reset-all',auth,admin,(req,res)=>{if(req.user.role!=='owner')return res.status(403).json({error:'Ainult owner.'});const preview=resetPreflight(Object.values(db.users).filter(t=>t.role!=='owner').map(t=>t.id));return res.status(423).json({error:'Reseti vana mittetäielik käivitusrada on keelatud. Täielik hooajareseti teisendus on eraldi testitud, kuid PostgreSQL-i eksklusiivne püsisalvestus ja taastamise proov puuduvad. Kasuta /api/admin/season-reset-preview.',preflight:preview})});
 app.post('/api/admin/rename-user',auth,admin,(req,res)=>{const t=byId(req.body.id),nn=norm(req.body.name);if(!t||nn.length<3)return res.status(400).json({error:'Vigane nimi.'});if(db.users[key(nn)]&&db.users[key(nn)].id!==t.id)return res.status(409).json({error:'Nimi kasutusel.'});const oldKey=key(t.name),old=t.name;delete db.users[oldKey];t.name=nn;db.users[key(nn)]=t;audit(req.user,'rename_user',t.id,{old,new:nn});saveNow();res.json({ok:true,name:nn})});
-app.get('/api/admin/ops',auth,admin,(req,res)=>res.json({audit:db.auditLogs.slice(0,300),snapshots:db.snapshots.map(x=>({id:x.id,time:x.time,label:x.label,actor:x.actor})),turnShop:[],turnOrders:[],market:{weapon:db.settings.weaponMarket,car:db.settings.carMarket,economy:db.settings.economyMarket,pressure:db.settings.marketPressure,travelBase:db.settings.travelBase,bountyFee:db.settings.bountyFee,businessTax:db.settings.businessTax,marketFee:db.settings.marketFee,carSaleFee:db.settings.carSaleFee,maintenanceRate:db.settings.maintenanceRate,bodyguardDefensePct:db.settings.bodyguardDefensePct,bodyguardGameFee:db.settings.bodyguardGameFee,workerBasePrice:db.settings.workerBasePrice,insuranceTiers:db.settings.insuranceTiers,spyPrices:db.settings.spyPrices,gangWeaponPrice:db.settings.gangWeaponPrice,gangWeaponPower:db.settings.gangWeaponPower,gangWeaponScore:db.settings.gangWeaponScore,businessProjectOverrides:db.settings.businessProjectOverrides,weapons:WEAPONS.map((w,i)=>({...w,price:weaponPrice(i)}))},handbook:true,gameBankBalance:db.gameBank.balance||0,gameBankTurnsBalance:db.gameBank.turnsBalance||0}));
+app.get('/api/admin/ops',auth,admin,(req,res)=>res.json({audit:db.auditLogs.slice(0,300),snapshots:db.snapshots.map(x=>({id:x.id,time:x.time,label:x.label,actor:x.actor})),turnShop:[],turnOrders:[],market:{weapon:db.settings.weaponMarket,car:db.settings.carMarket,economy:db.settings.economyMarket,pressure:db.settings.marketPressure,travelBase:db.settings.travelBase,bountyFee:db.settings.bountyFee,businessTax:db.settings.businessTax,marketFee:db.settings.marketFee,carSaleFee:db.settings.carSaleFee,maintenanceRate:db.settings.maintenanceRate,bodyguardDefensePct:db.settings.bodyguardDefensePct,bodyguardGameFee:db.settings.bodyguardGameFee,workerBasePrice:db.settings.workerBasePrice,spyPrices:db.settings.spyPrices,gangWeaponPrice:db.settings.gangWeaponPrice,gangWeaponPower:db.settings.gangWeaponPower,gangWeaponScore:db.settings.gangWeaponScore,businessProjectOverrides:db.settings.businessProjectOverrides,weapons:WEAPONS.map((w,i)=>({...w,price:weaponPrice(i)}))},handbook:true,gameBankBalance:db.gameBank.balance||0,gameBankTurnsBalance:db.gameBank.turnsBalance||0}));
 app.post('/api/admin/turn-pack',auth,admin,(req,res)=>res.status(410).json({error:'Käigupakkide müük on ajutiselt eemaldatud.'}));
 app.post('/api/admin/turn-pack/toggle',auth,admin,(req,res)=>res.status(410).json({error:'Käigupakkide müük on ajutiselt eemaldatud.'}));
 app.post('/api/admin/turn-pack/delete',auth,admin,(req,res)=>res.status(410).json({error:'Käigupakkide müük on ajutiselt eemaldatud.'}));
@@ -1731,7 +2637,7 @@ app.post('/api/admin/gift',auth,admin,(req,res)=>{const x=req.body,cash=Math.max
 app.post('/api/admin/snapshot',auth,admin,(req,res)=>{const id=snap(req.body.label||'Käsitsi snapshot',req.user);audit(req.user,'snapshot_create',id);saveNow();res.json({ok:true,id})});
 app.post('/api/admin/rollback',auth,admin,(req,res)=>{if(req.user.role!=='owner')return res.status(403).json({error:'Ainult owner saab rollbacki teha.'});const ss=db.snapshots.find(x=>x.id===String(req.body.id));if(!ss)return res.status(404).json({error:'Snapshot puudub.'});const keep=db.snapshots.slice();const restored=restoreSnapshotData(ss);db=restored;normalize();db.snapshots=keep;audit(req.user,'rollback',ss.id,{label:ss.label});saveNow();io.emit('toast','Serveri seis taastati snapshotist. Logi vajadusel uuesti sisse.');res.json({ok:true})});
 app.post('/api/admin/market',auth,admin,(req,res)=>{snap('Enne turu muutmist',req.user);if(req.body.weapon!=null)db.settings.weaponMarket=clamp(+req.body.weapon,.25,4);if(req.body.car!=null)db.settings.carMarket=clamp(+req.body.car,.25,4);if(req.body.economy!=null)db.settings.economyMarket=clamp(+req.body.economy,.45,2.5);for(const [k,min,max] of [['travelBase',0,1e12],['bountyFee',0,.9],['businessTax',0,.9],['marketFee',0,.9],['maintenanceRate',0,.2],['bodyguardDefensePct',0,.5],['bodyguardGameFee',0,1],['workerBasePrice',0,1e9]])if(req.body[k]!=null)db.settings[k]=clamp(+req.body[k],min,max);db.settings.marketPressure=0;audit(req.user,'market_set','market',{weapon:db.settings.weaponMarket,car:db.settings.carMarket,economy:db.settings.economyMarket});saveNow();res.json({ok:true,settings:db.settings})});
-app.post('/api/admin/insurance-settings',auth,admin,(req,res)=>{const tier=String(req.body.tier||''),t=db.settings.insuranceTiers[tier];if(!t)return res.status(400).json({error:'Vigane pakett.'});if(req.body.basePrice!=null)t.basePrice=Math.max(0,Math.floor(+req.body.basePrice||0));if(req.body.coverage!=null)t.coverage=clamp(+req.body.coverage,0,.9);if(req.body.deductible!=null)t.deductible=clamp(+req.body.deductible,0,.9);audit(req.user,'insurance_settings',tier,{...t});saveNow();res.json({ok:true,settings:db.settings})});
+app.post('/api/admin/insurance-settings',auth,admin,(req,res)=>res.status(410).json({error:'Kindlustus on mängust eemaldatud.'}));
 app.post('/api/admin/weapon-price',auth,admin,(req,res)=>{const i=Math.floor(+req.body.index),price=Math.max(1000,Math.min(250000,Math.floor(+req.body.price||0)));if(!WEAPONS[i]||i===0)return res.status(400).json({error:'Vigane relv.'});db.settings.weaponPriceOverrides[i]=price;audit(req.user,'weapon_price',String(i),{price});saveNow();res.json({ok:true,weapons:WEAPONS.map((w,j)=>({...w,price:weaponPrice(j)}))})});
 app.post('/api/admin/spy-price',auth,admin,(req,res)=>{const type=String(req.body.type||''),price=Math.max(0,Math.floor(+req.body.price||0));if(!SPY_TYPES[type])return res.status(400).json({error:'Vigane spioon.'});db.settings.spyPrices[type]=price;audit(req.user,'spy_price',type,{price});saveNow();res.json({ok:true,spyPrices:db.settings.spyPrices})});
 app.post('/api/admin/gang-market',auth,admin,(req,res)=>{if(req.body.price!=null)db.settings.gangWeaponPrice=Math.max(0,Math.floor(+req.body.price||0));if(req.body.power!=null)db.settings.gangWeaponPower=Math.max(1,Math.floor(+req.body.power||1));if(req.body.score!=null)db.settings.gangWeaponScore=Math.max(0,Math.floor(+req.body.score||0));audit(req.user,'gang_market','gang',{price:db.settings.gangWeaponPrice,power:db.settings.gangWeaponPower,score:db.settings.gangWeaponScore});saveNow();res.json({ok:true,settings:db.settings})});
@@ -1748,7 +2654,7 @@ app.get('/api/admin/handbook',auth,admin,(req,res)=>res.json({sections:[
 ['Wanted ja vangla','Vanglas ei saa rünnata, röövida, spioneerida, reisida ega uusi projekte alustada. Välja saab aja või kautsjoniga. Teine mängija saab kautsjoni samuti maksta; see läheb logisse ja teavitusse.'],
 ['Kindlustus','Basic/Standard/Premium/Elite on erineva hinna ja osalise katvusega. Kindlustus ei kata kogu kahju. Hinnad sõltuvad netovarast ja turust; admin saab protsente/hindu muuta.'],
 ['Bounty','Bounty teenustasu vaikimisi 25% läheb mängu keskpanka. Ülejäänu on preemia. Looja saab määrata edukate rünnakute nõude ja tähtaja. OWNER ei saa olla sihtmärk; admin saab olla sihtmärk nagu tavaline mängija.'],
-['Luurekeskus','Spioonid: Soome, Ukraina ja Vene klass. Palkamine maksab raha ja käike. Spionaaž 25 käiku, sama sihtmärk 1× / 15 min, õnnestumine pole garanteeritud. Edu korral näeb varjatud infot.'],
+['Luurekeskus','Spioonid: Soome, Ukraina ja Vene klass. Palkamine maksab raha ja käike. Spionaaž 100 käiku, kuni 3 luuret 15 minuti jooksul. Õnnestumine pole garanteeritud. Edu korral näeb varjatud infot.'],
 ['Ettevõtted','Firmad toodavad raha, mitte käike. Igal firmatüübil saab olla korraga 1 aktiivne projekt; eri firmatüübid võivad töötada paralleelselt. Projektidel on käigukulu, rahakulu ja kestus 2–8h. Tulu saab projekti lõpus.'],
 ['Autodiiler','Autod ostetakse/müüakse turuhinnaga. Mängijad saavad osta teiste autosid; NPC ostud võivad turult mõistliku hinnaga autosid ära osta. Liiga kallis auto võib jääda müüki.'],
 ['Netovara','Netovara = sularaha + pank + relvad + autod + kinnisvara + firmad + krüpto – aktiivsed võlad. Vara väärtused liiguvad turumajandusega.'],
@@ -1794,11 +2700,47 @@ function best(cs){let b=null;for(let a=0;a<cs.length-4;a++)for(let c=a+1;c<cs.le
 function showdown(r){r.state='showdown';const a=r.players.filter(p=>!p.folded);let bs=null,w=[];for(const p of a){const s=best([...p.cards,...r.community]);if(!bs||cmp(s,bs)>0){bs=s;w=[p]}else if(cmp(s,bs)===0)w.push(p)}finish(r,w)}
 function finish(r,w){const share=Math.floor(r.pot/w.length);for(const p of w){p.chips+=share;const u=byId(p.id);if(u)u.stats.pokerWins++}r.pot=0;r.state='showdown';emitP(r);setTimeout(()=>safeJob('poker finish',()=>{r.state='waiting';r.community=[];r.street='';r.turn=-1;for(const p of r.players){p.cards=[];p.bet=0;p.folded=false;p.allin=false;p.acted=false}emitP(r);saveSoon()}),4000)}
 
-function npcCarProfitTarget(){const r=Math.random();if(r<.12)return .25+Math.random()*.15;if(r<.32)return .05+Math.random()*.05;return .10+Math.random()*.15}
-function npcCarBuys(){const now=Date.now();for(const [id,l] of Object.entries(db.carListings)){if(!l.npcActionAt)l.npcActionAt=(l.time||now)+rand(2,15)*60000;if(now<l.npcActionAt||l.npcOffer>0)continue;const seller=byId(l.seller);if(!seller){delete db.carListings[id];continue}const buy=Math.max(1,Number(l.car.buy||l.car.market||1)),base=Math.max(buy,Number(l.car.market||buy)),fair=Math.max(Math.floor(buy*1.05),Math.floor(base)),feeRate=clamp(Number(db.settings.carSaleFee??.08),0,.25),targetNetProfit=npcCarProfitTarget(),minProfit=Math.ceil((buy*(1+targetNetProfit))/Math.max(.01,1-feeRate)),ratio=l.price/fair;if(ratio<=1.05){const npcPay=Math.max(l.price,minProfit),fee=Math.floor(npcPay*feeRate),credit=creditBankFirst(seller,npcPay-fee);gameIncome(fee,'npc_car_market_fee',seller);notify(seller,'car',`NPC ostis sinu auto ${npcPay} € eest. 8% müügitasu ${fee} € läks keskpanka. Panka ${credit.toBank} €${credit.toCash?`, sularahasse ${credit.toCash} €`:''}.`);delete db.carListings[id];continue}const nearMarket=Math.floor(fair*(.98+Math.random()*.07));let offer=Math.max(minProfit,nearMarket);offer=Math.min(l.price-1,offer);if(offer<=buy)offer=Math.min(l.price-1,Math.floor(buy*1.05/Math.max(.01,1-feeRate)));l.npcOffer=Math.max(1,offer);l.npcOfferAt=now;l.npcActionAt=0;const pct=Math.max(0,Math.round(((l.npcOffer*(1-feeRate))/buy-1)*100));notify(seller,'car',`NPC tegi sinu autole pakkumise ${l.npcOffer} €. Sinu küsitud hind oli ${l.price} €. Pärast 8% keskpanga müügitasu oleks sinu kasum umbes ${pct}%. Mõne autoga võib kasum olla väiksem, enamasti 10–25% ja vahel võib rohkem jopata.`)}}
-
+// Legacy car listings: autonomous market buyers are not player accounts.
+// Same anti-arbitrage ceiling applies to the older /api/car market as to auto-world.
+function legacyNpcFairValue(c){
+ const cost=Math.max(1,Math.floor(Number(c?.buy||c?.market||1)));
+ const market=Math.max(cost,Math.floor(Number(c?.market||cost)));
+ const feeRate=clamp(Number(db.settings.carSaleFee??.08),0,.25);
+ // Old-market sellers pay a fee. Never exceed 20% OR 1.3B NET profit.
+ const maximumNet=cost+autoNpcProfitCeiling(cost);
+ return Math.min(market,Math.floor(maximumNet/(1-feeRate)));
+}
+// Never invent a guaranteed seller profit or pay above the asking price.
+function npcCarBuys(){
+ const now=Date.now();
+ for(const [id,l] of Object.entries(db.carListings||{})){
+  if(!l.npcActionAt)l.npcActionAt=(l.time||now)+rand(2,15)*60000;
+  if(now<l.npcActionAt||l.npcOffer>0)continue;
+  const seller=byId(l.seller);
+  if(!seller){delete db.carListings[id];saveSoon();continue}
+  if(seller.npc)continue; // Historical bot accounts must not trade autonomously.
+  const buy=Math.max(1,Number(l.car.buy||l.car.market||1));
+  const fair=legacyNpcFairValue(l.car);
+  const ask=Math.max(0,Math.floor(Number(l.price)||0));
+  if(!Number.isSafeInteger(ask)||ask<=0)continue;
+  const feeRate=clamp(Number(db.settings.carSaleFee??.08),0,.25);
+  if(ask<=fair){
+   const fee=Math.floor(ask*feeRate),credit=creditBankFirst(seller,ask-fee);
+   gameIncome(fee,'npc_car_market_fee',seller);
+   notify(seller,'car',`NPC ostis sinu auto ${ask} € eest. Müügitasu ${fee} € läks keskpanka. Panka ${credit.toBank} €${credit.toCash?`, sularahasse ${credit.toCash} €`:''}.`);
+   delete db.carListings[id];saveSoon();continue;
+  }
+  // Overpriced listings receive a market-based counteroffer, never a guaranteed markup.
+  const nearMarket=Math.max(1,Math.floor(fair*(.92+Math.random()*.08)));
+  l.npcOffer=Math.max(1,Math.min(ask-1,nearMarket));
+  l.npcOfferAt=now;l.npcActionAt=0;
+  const pct=Math.round(((l.npcOffer*(1-feeRate))/buy-1)*100);
+  notify(seller,'car',`NPC tegi sinu autole vastupakkumise ${l.npcOffer} €. Küsitud hind oli ${ask} €. Pärast müügitasu oleks sinu kasum/kahjum ligikaudu ${pct}%.`);
+  saveSoon();
+ }
+}
 function updateMarket(){if(Date.now()<db.settings.marketNext)return;const pressure=Math.min(1,Math.abs(db.settings.marketPressure||0)/5000),dir=(Math.random()-.5)*.10+(db.settings.marketPressure>0?.015*pressure:0);db.settings.weaponMarket=clamp(db.settings.weaponMarket*(1+dir),.65,1.65);db.settings.carMarket=clamp(db.settings.carMarket*(1+(Math.random()-.5)*.04),.92,1.08);for(const u of Object.values(db.users)){for(const c of (u.cars||[])){const buy=Math.max(1,Number(c.buy||1)),cur=Math.max(buy,Number(c.market||buy*1.08)),next=Math.floor(cur*(1+(Math.random()-.5)*.08));c.market=clamp(next,Math.floor(buy*1.05),Math.floor(buy*1.40))}}for(const l of Object.values(db.carListings||{})){if(l?.car){const buy=Math.max(1,Number(l.car.buy||1)),cur=Math.max(buy,Number(l.car.market||buy*1.08)),next=Math.floor(cur*(1+(Math.random()-.5)*.08));l.car.market=clamp(next,Math.floor(buy*1.05),Math.floor(buy*1.40))}}db.settings.economyMarket=clamp(db.settings.economyMarket*(1+(Math.random()-.5)*.035),.8,1.25);db.settings.marketPressure=Math.floor((db.settings.marketPressure||0)*.25);db.settings.marketNext=Date.now()+900000;io.emit('settings',db.settings);saveSoon()}
-function decayWanted(){for(const u of Object.values(db.users)){if(u.wanted>0&&Math.random()<.25)u.wanted--;if(u.vipUntil&&u.vipUntil<Date.now()){u.vip=false;u.vipUntil=0}if(u.insurance?.active&&u.insurance.until<Date.now())u.insurance.active=false}}
+function decayWanted(){for(const u of Object.values(db.users)){if(u.wanted>0&&Math.random()<.25)u.wanted--;if(u.vipUntil&&u.vipUntil<Date.now()){u.vip=false;u.vipUntil=0}}}
 function safeJob(label,fn){try{return fn()}catch(e){console.error(`[GAME JOB ERROR] ${label}:`,e?.stack||e);return null}}
 // A broken NPC, game-bank loan, or one legacy player's data must not stop all scheduled work.
 setInterval(()=>{
@@ -1812,6 +2754,7 @@ setInterval(()=>{
   safeJob('settleLoans',settleLoans);
   safeJob('settleGameBankLoans',settleGameBankLoans);
   for(const u of Object.values(db.users))safeJob(`maintenance/nightlife:${u.id}`,()=>{
+    if(u.npc===true)return; // v8: bot-player nightly income is retired
     refreshNightlife(u);
     if(Date.now()>=u.maintenanceDue){chargeMaintenance(u);u.maintenanceDue=Date.now()+86400000}
   });
@@ -1819,4 +2762,4 @@ setInterval(()=>{
 },15000);
 setInterval(()=>safeJob('npcTick',npcTick),60000);
 setInterval(()=>{const m=process.memoryUsage(),mb=v=>Math.round(v/1048576);console.log(`[MEMORY] rss=${mb(m.rss)}MB heap=${mb(m.heapUsed)}/${mb(m.heapTotal)}MB external=${mb(m.external)}MB users=${Object.keys(db.users).length} snapshots=${db.snapshots.length}`)},60000).unref();
-(async()=>{await initStorage();let ownerChanged=false;if(OWNER_PASSWORD&&!db.users[key(OWNER_USERNAME)]){db.users[key(OWNER_USERNAME)]=newUser(OWNER_USERNAME,OWNER_PASSWORD,'owner');ownerChanged=true}const owner=db.users[key(OWNER_USERNAME)];if(owner&&owner.role!=='owner'){owner.role='owner';ownerChanged=true}for(const u of Object.values(db.users)){if(owner&&u.id!==owner.id&&u.role==='owner'){u.role='admin';ownerChanged=true}}if(ownerChanged)await saveNow();server.listen(PORT,()=>console.log(`VARJURIIK v7.08 running on ${PORT}`))})().catch(e=>{console.error(e);process.exit(1)});
+(async()=>{await initStorage();let ownerChanged=false;if(OWNER_PASSWORD&&!db.users[key(OWNER_USERNAME)]){db.users[key(OWNER_USERNAME)]=newUser(OWNER_USERNAME,OWNER_PASSWORD,'owner');ownerChanged=true}const owner=db.users[key(OWNER_USERNAME)];if(owner&&owner.role!=='owner'){owner.role='owner';ownerChanged=true}for(const u of Object.values(db.users)){if(owner&&u.id!==owner.id&&u.role==='owner'){u.role='admin';ownerChanged=true}}if(ownerChanged)await saveNow();server.listen(PORT,()=>console.log(`VARJURIIK 8.0 TEST running on ${PORT}`))})().catch(e=>{console.error(e);process.exit(1)});

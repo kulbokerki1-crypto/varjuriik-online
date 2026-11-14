@@ -1,6 +1,6 @@
 {
-  "name": "varjuriik-v5",
-  "version": "5.0.0",
+  "name": "varjuriik-v8-audit",
+  "version": "8.0.0-beta.1",
   "private": true,
   "main": "server.js",
   "scripts": {

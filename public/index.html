@@ -87,24 +87,80 @@ let autoData=null,autoLastFetch=0,autoLoading=false;
 function autoImg(c){const type=c.brand||'auto';const first={'Škoda':'🚙','Toyota':'🚗','BMW':'🏎️','Audi':'🚘','Mercedes-Benz':'🚘','Porsche':'🏎️','Opel':'🚙','Citroën':'🚗'}[type]||'🚗';return `<div class="auto-photo" aria-label="${esc(type)} illustratsioon">${first}<small>${esc(type)} ${esc(c.model||'')}</small></div>`}
 function autoUsedCard(c){
  const total=(Number(c.market)||0)+(Number(c.transport)||0)+(Number(c.registration)||0);
- return `<article class="notice auto-used-card">
+ return `<article class="notice auto-used-card" data-auto-used-id="${esc(String(c.id))}">
    <div class="auto-used-head">${autoImg(c)}<div class="auto-used-heading"><b>${esc(c.name)}</b><div class="mut auto-used-meta">${esc(String(c.year||''))} · ${esc(String(c.mileage||''))} · ${esc(c.city||'')}</div></div></div>
    <div class="auto-used-prices"><b>Hind ${fmt(c.market)}</b><span class="mut">Ideaalne ${fmt(c.idealPrice)}</span></div>
    <div class="mut auto-used-extra">Transport ${fmt(c.transport)} · registreerimine ${fmt(c.registration)}</div>
    <details class="auto-used-condition"><summary>Seisukord: ${esc(c.description||'Andmed puuduvad')}</summary><div class="mut">${esc(c.description||'Andmed puuduvad')}</div></details>
-   <div class="auto-used-actions"><b>Kokku ${fmt(total)}</b><button class="btn good" onclick="autoAction('buy',{kind:'used',id:'${esc(String(c.id))}'})">Osta · 5⚡</button></div>
+   <div class="auto-used-actions"><b>Kokku ${fmt(total)}</b><button class="btn good" onclick="autoAction('buy',{kind:'used',id:'${esc(String(c.id))}'},this)">Osta · 5⚡</button></div>
  </article>`;
 }
-function autoAction(route,body){return post('/api/auto-world/'+route,body).then(j=>{if(j)return loadAutoWorld()})}
+// Hoia ostmise järel kasutaja asukoht samal autol või samas nimekirjas.
+// Autoäri värskendamine lisab ostetud auto "Minu autod" jaotusse,
+// nii et ainult vana window.scrollY taastamine ei aita.
+function autoBuyScrollSnapshot(kind,source){
+ const el=source&&source.nodeType===1?source:null;
+ let target=null,identity=null;
+ if(kind==='new'&&el&&el.matches('.auto-buy-new')){
+   identity={kind:'new',brand:el.dataset.brand,model:el.dataset.model};
+   target=el;
+ }else if(kind==='used'&&el){
+   const card=el.closest('.auto-used-card');
+   const next=card?.nextElementSibling;
+   const prev=card?.previousElementSibling;
+   const sibling=next?.matches('.auto-used-card')?next:(prev?.matches('.auto-used-card')?prev:null);
+   if(sibling){identity={kind:'used',id:sibling.dataset.autoUsedId};target=sibling;}
+ }
+ if(!target){
+   target=document.getElementById(kind==='used'?'carMarket':'auto-new-models')
+     ||document.getElementById('autoWorldBox');
+   identity={kind:'section',id:target?.id||''};
+ }
+ return {identity,top:target?.getBoundingClientRect().top??null,
+   scrollY:window.scrollY||document.scrollingElement?.scrollTop||0};
+}
+function autoBuyScrollTarget(s){
+ if(!s?.identity)return null;
+ const q=s.identity;
+ if(q.kind==='new')return [...document.querySelectorAll('.auto-buy-new')].find(
+   x=>x.dataset.brand===q.brand&&x.dataset.model===q.model)||document.getElementById('auto-new-models');
+ if(q.kind==='used')return [...document.querySelectorAll('.auto-used-card')].find(
+   x=>x.dataset.autoUsedId===q.id)||document.getElementById('carMarket');
+ return document.getElementById(q.id);
+}
+function restoreAutoBuyScroll(s){
+ if(!s)return;
+ const anchor=autoBuyScrollTarget(s);
+ const y=window.scrollY||document.scrollingElement?.scrollTop||0;
+ const delta=anchor&&s.top!==null?anchor.getBoundingClientRect().top-s.top:null;
+ const target=delta===null?s.scrollY:y+delta;
+ if(Number.isFinite(target))window.scrollTo({top:Math.max(0,target),left:0,behavior:'instant'});
+}
+function autoAction(route,body,source){
+ const scroll=route==='buy'?autoBuyScrollSnapshot(body?.kind,source):null;
+ return post('/api/auto-world/'+route,body).then(async j=>{
+   if(j){
+     await loadAutoWorld();
+     if(scroll){
+       restoreAutoBuyScroll(scroll);
+       requestAnimationFrame(()=>{
+         restoreAutoBuyScroll(scroll);
+         requestAnimationFrame(()=>restoreAutoBuyScroll(scroll));
+       });
+     }
+   }
+   return j;
+ });
+}
 function autoShowModels(brand){const el=document.getElementById('auto-new-models');if(el){el.open=true;el.scrollIntoView({behavior:'smooth',block:'start'});}}
 // Esinduse ostunupud: kasuta andmeatribuute, mitte dünaamilist inline-JavaScripti.
 // Nii ei saa automudeli nimi tekitada SyntaxErrorit (sh Safari brauseris).
-async function autoBuyNewModel(brandEncoded,modelEncoded){
+async function autoBuyNewModel(brandEncoded,modelEncoded,source){
  try{
   const brand=decodeURIComponent(String(brandEncoded));
   const model=decodeURIComponent(String(modelEncoded));
   if(!brand||!model)return msg('Automargi või mudeli andmed puuduvad.');
-  return await autoAction('buy',{kind:'new',brand,model});
+  return await autoAction('buy',{kind:'new',brand,model},source);
  }catch(e){msg('Auto ostmine ebaõnnestus: '+(e.message||'tundmatu viga'));}
 }
 document.addEventListener('click',function(e){
@@ -112,7 +168,7 @@ document.addEventListener('click',function(e){
  if(!button||button.disabled)return;
  e.preventDefault();
  button.disabled=true;
- Promise.resolve(autoBuyNewModel(button.dataset.brand,button.dataset.model))
+ Promise.resolve(autoBuyNewModel(button.dataset.brand,button.dataset.model,button))
    .finally(()=>{if(button.isConnected)button.disabled=false;});
 });
 function militaryBid(id,top){const n=Number(prompt('Sõjaväetehnika hanke pakkumine (€)',String(top+1)));if(Number.isSafeInteger(n)&&n>top)autoAction('military-bid',{id,amount:n});}

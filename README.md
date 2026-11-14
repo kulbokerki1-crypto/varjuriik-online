@@ -31,3 +31,12 @@ See ZIP on pakitud vanade versioonide eeskujul: `server.js`, `package.json`, `RE
 - Kontrollitud JavaScripti süntaks, kolme näidiskaardi kuvamine ja mobiilibrauseris kerimine (Chrome/Chromium; lokaalne UI-katse).
 
 See ei tähenda, et muud pooleliolevad VARJURIIK 8.0 PostgreSQL-i turvatestid oleksid lõpetatud. Pakett on endiselt ainult **eraldi testkeskkonnale**.
+
+
+## v8.0 – Auto ostul leht ei hüppa enam üles (14.11.2026)
+
+- Uue esinduse auto ostmisel taastub täpselt vajutatud mudeli ostunupu asukoht.
+- Kasutatud auto ostmisel jääb kasutaja nimekirjas järgmise auto juurde.
+- Kerimisasukoht taastatakse pärast autoäri värskendamist; sellega arvestatakse ka "Minu autod" jaotusse lisanduva auto kõrgust.
+- Auto ostu hind jääb 5 käiku, muud mängureeglid jäävad samaks.
+- PostgreSQL-i päris integratsioonitestid on endiselt tegemata. See on testversioon, mitte lõplikult ohutuks kinnitatud põhiserveri väljalase.

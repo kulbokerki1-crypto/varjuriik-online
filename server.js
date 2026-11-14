@@ -1554,12 +1554,15 @@ function militaryTenderTick(w,now){
   w.militaryTenderHistory=w.militaryTenderHistory.slice(0,15);changed=true;
  }
  w.militaryTenders=w.militaryTenders.filter(t=>t.status==='open');
- if(w.militaryTenders.length===0&&(!w.militaryTenderNext||now>=w.militaryTenderNext)){
-  for(let i=0;i<3;i++){
+ // Keep three public tenders available. Previously the 8h auctions ended while
+ // militaryTenderNext still blocked new ones for 12h (an empty 4h gap).
+ const tenderSlotsToFill=Math.max(0,3-w.militaryTenders.length);
+ if(tenderSlotsToFill){
+  for(let i=0;i<tenderSlotsToFill;i++){
    const car=militaryTenderCar();
    w.militaryTenders.push({id:crypto.randomUUID(),car,starting:Math.max(1000000,Math.floor(car.market*.72)),end:now+8*3600000,bids:[],status:'open'});
   }
-  w.militaryTenderNext=now+12*3600000;changed=true;
+  w.militaryTenderNext=now+8*3600000;changed=true;
  }
  if(changed)saveSoon();
 }
@@ -1669,26 +1672,29 @@ function autoDiagnosticPrice(c){
 // v8 economy: same 5–20% target GROSS profit for ALL cars (cheap, luxury, new, used, military).
 // Basis includes purchase, transport, registration, diagnostics, repairs and tuning.
 // All NPC vehicle sales target 5–20% gross profit on verified total costs,
-// with a global maximum of 1.3 billion € profit per car. All cars, including military.
-// Real market value can prevent a profitable sale; NPCs never guarantee 5%.
+// with a maximum of 1.3 billion € for civilian cars or 3 billion € for
+// demilitarized military vehicles (gross profit per vehicle). Real market value
+// can prevent a profitable sale; NPCs never guarantee 5%.
 const AUTO_NPC_MAX_PROFIT=1_300_000_000;
-const AUTO_NPC_QUOTE_POLICY='all-cars-5-20-max-1.3b-v2';
-function autoNpcProfitCeiling(cost){
+const AUTO_MILITARY_NPC_MAX_PROFIT=3_000_000_000;
+const AUTO_NPC_QUOTE_POLICY='all-cars-5-20-military-3b-v3';
+function isAutoMilitary(c){return c?.vehicleClass==='military'||c?.brand==='Militaar';}
+function autoNpcProfitCeiling(cost,c){
  cost=Math.floor(Number(cost)||0);
  if(!Number.isSafeInteger(cost)||cost<1)return 0;
- return Math.min(AUTO_NPC_MAX_PROFIT,Math.floor(cost*.20));
+ return Math.min(isAutoMilitary(c)?AUTO_MILITARY_NPC_MAX_PROFIT:AUTO_NPC_MAX_PROFIT,Math.floor(cost*.20));
 }
 function autoNpcFairValue(c){
  const ideal=Math.max(1,Math.floor(autoIdealPrice(c)));
  const cost=autoCostSummary(c).total;
  if(!Number.isSafeInteger(cost)||cost<1)return 0; // Unknown cost: no safe NPC quote; avoid gifting money for imported/invalid cars
- return Math.max(1,Math.min(ideal,cost+autoNpcProfitCeiling(cost)));
+ return Math.max(1,Math.min(ideal,cost+autoNpcProfitCeiling(cost,c)));
 }
 function autoNpcTargetOffer(c){
  const cost=autoCostSummary(c).total;
  const fair=autoNpcFairValue(c);
  if(!Number.isSafeInteger(cost)||cost<=0||!Number.isSafeInteger(fair))return null;
- const ceiling=autoNpcProfitCeiling(cost);
+ const ceiling=autoNpcProfitCeiling(cost,c);
  const minimum=Math.ceil(cost*1.05);
  if(ceiling<minimum-cost||fair<minimum)return null; // No forced profit if market/cap cannot support 5%.
  const rate=crypto.randomInt(5,21); // Random 5–20% offer; 1.3B absolute cap takes precedence.
@@ -2707,7 +2713,7 @@ function legacyNpcFairValue(c){
  const market=Math.max(cost,Math.floor(Number(c?.market||cost)));
  const feeRate=clamp(Number(db.settings.carSaleFee??.08),0,.25);
  // Old-market sellers pay a fee. Never exceed 20% OR 1.3B NET profit.
- const maximumNet=cost+autoNpcProfitCeiling(cost);
+ const maximumNet=cost+autoNpcProfitCeiling(cost,c);
  return Math.min(market,Math.floor(maximumNet/(1-feeRate)));
 }
 // Never invent a guaranteed seller profit or pay above the asking price.

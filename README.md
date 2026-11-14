@@ -40,3 +40,12 @@ See ei tähenda, et muud pooleliolevad VARJURIIK 8.0 PostgreSQL-i turvatestid ol
 - Kerimisasukoht taastatakse pärast autoäri värskendamist; sellega arvestatakse ka "Minu autod" jaotusse lisanduva auto kõrgust.
 - Auto ostu hind jääb 5 käiku, muud mängureeglid jäävad samaks.
 - PostgreSQL-i päris integratsioonitestid on endiselt tegemata. See on testversioon, mitte lõplikult ohutuks kinnitatud põhiserveri väljalase.
+
+
+## 14.11.2026 — sõjaväehanked ja automüügi pakkumiste uuendamine
+- Sõjaväetehnika hangete 8 tunni ja 12 tunni ajastuse vahelt eemaldatud tühiaeg; hoitakse kuni 3 aktiivset hanget, uued avanevad lõppenute asemele.
+- Sõjaväesõidukite NPC-müügi võimalik brutokasum 5–20% kogukulust, kuid maksimaalselt 3 000 000 000 € ühe sõiduki kohta; turuhind võib pakkumise välistada. Tsiviilautodel varasem 1 300 000 000 € lagi.
+- Auto NPC-vastupakkumise teavituse saabumisel värskendatakse automaatselt autokeskuse pakkumisi; aktiivsete kuulutuste puhul on varuks automaatne värskendus ja telefoni kerimiskoha säilitamine.
+- PostgreSQL-i salvestamise ja taastamise täistestid on endiselt pooleli. Ära tee üldresetti; enne põhimängu uuendamist tee varukoopia.
+
+Kohaliku auditi eraldi kontrollid: 18/18 läbitud (hanked, hinnapiirid, Socket.IO-teavitus, varuvärskendus). Päris andmebaasiga ja mobiili juurutusega kontrollimata.

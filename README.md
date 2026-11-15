@@ -49,3 +49,13 @@ See ei tähenda, et muud pooleliolevad VARJURIIK 8.0 PostgreSQL-i turvatestid ol
 - PostgreSQL-i salvestamise ja taastamise täistestid on endiselt pooleli. Ära tee üldresetti; enne põhimängu uuendamist tee varukoopia.
 
 Kohaliku auditi eraldi kontrollid: 18/18 läbitud (hanked, hinnapiirid, Socket.IO-teavitus, varuvärskendus). Päris andmebaasiga ja mobiili juurutusega kontrollimata.
+
+
+## Kuumparandus 15.11.2026: ööelu rahanupp
+
+- Parandatud mobiilibrauseri `crypto.randomUUID()` puudumisest tekkiv vaikne tõrge.
+- Tehingu ID-l on fallback, vigade korral lukustus vabaneb alati, korduspäring kasutab sama ID-d.
+- Kontrollitakse sisestatud summat ja näidatakse selgeid veateateid.
+- Näidatakse 1000 käigu nõuet ja 8% väljamaksetasu.
+- Muudetud ainult `public/index.html`; `server.js` on eelmise paketi oma.
+- PostgreSQL-i pikaajalise katkestuskindluse audit ei ole veel lõpetatud.

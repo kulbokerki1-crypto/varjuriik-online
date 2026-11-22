@@ -51,11 +51,7 @@ See ei tähenda, et muud pooleliolevad VARJURIIK 8.0 PostgreSQL-i turvatestid ol
 Kohaliku auditi eraldi kontrollid: 18/18 läbitud (hanked, hinnapiirid, Socket.IO-teavitus, varuvärskendus). Päris andmebaasiga ja mobiili juurutusega kontrollimata.
 
 
-## Kuumparandus 15.11.2026: ööelu rahanupp
-
-- Parandatud mobiilibrauseri `crypto.randomUUID()` puudumisest tekkiv vaikne tõrge.
-- Tehingu ID-l on fallback, vigade korral lukustus vabaneb alati, korduspäring kasutab sama ID-d.
-- Kontrollitakse sisestatud summat ja näidatakse selgeid veateateid.
-- Näidatakse 1000 käigu nõuet ja 8% väljamaksetasu.
-- Muudetud ainult `public/index.html`; `server.js` on eelmise paketi oma.
-- PostgreSQL-i pikaajalise katkestuskindluse audit ei ole veel lõpetatud.
+## Viimaste paranduste koondfail
+See pakett ühendab eelneva sõjaväehangete ja NPC-autopakkumiste paranduse ning hilisema ööelu 'Lisa raha' nupu paranduse.
+ZIP-i ülesehitus on nagu vanasti: server.js, package.json, README.md, public/index.html.
+Tähelepanu: pakett põhineb vestluses seni olemasolevatel failidel; enne olemasoleva GitHubi projekti ülekirjutamist kontrolli, kas sinna on vahepeal muid uuemaid muudatusi tehtud. PostgreSQL-i integratsioonitestid on pooleli.

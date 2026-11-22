@@ -1369,6 +1369,27 @@ const app=express(),server=http.createServer(app),io=new Server(server);
 server.keepAliveTimeout = 120000;
 server.headersTimeout = 125000;
 app.use(express.json({limit:'200kb'}));
+// Diagnostic-only: read-only health endpoint (no player/account data).
+app.get('/healthz',(req,res)=>res.status(200).json({ok:true,uptimeSeconds:Math.floor(process.uptime())}));
+// Temporary diagnostics for Render 502 / login stalls. Do not log passwords,
+// request bodies, cookies, tokens, player names or query-string values.
+app.use((req,res,next)=>{
+  const start=Date.now();
+  const traceLogin=req.path==='/api/login';
+  if(traceLogin)console.log('[HTTP LOGIN BEGIN]');
+  res.on('finish',()=>{
+    const ms=Date.now()-start;
+    if(traceLogin||ms>3000||res.statusCode>=500){
+      console.log('[HTTP RESULT]',req.method,req.path,res.statusCode,ms+'ms');
+    }
+  });
+  res.on('close',()=>{
+    if(!res.writableEnded && (traceLogin||Date.now()-start>3000)){
+      console.warn('[HTTP ABORTED]',req.method,req.path,(Date.now()-start)+'ms');
+    }
+  });
+  next();
+});
 // Mängu HTML sisaldab JS-koodi otse failis: väldi brauseri aegunud vahemälu pärast deploy'd.
 app.use((req,res,next)=>{if(req.path==='/'||req.path==='/index.html')res.set('Cache-Control','no-store, max-age=0, must-revalidate');next();});
 app.use(express.static(path.join(__dirname,'public')));
@@ -2749,9 +2770,22 @@ function npcCarBuys(){
 }
 function updateMarket(){if(Date.now()<db.settings.marketNext)return;const pressure=Math.min(1,Math.abs(db.settings.marketPressure||0)/5000),dir=(Math.random()-.5)*.10+(db.settings.marketPressure>0?.015*pressure:0);db.settings.weaponMarket=clamp(db.settings.weaponMarket*(1+dir),.65,1.65);db.settings.carMarket=clamp(db.settings.carMarket*(1+(Math.random()-.5)*.04),.92,1.08);for(const u of Object.values(db.users)){for(const c of (u.cars||[])){const buy=Math.max(1,Number(c.buy||1)),cur=Math.max(buy,Number(c.market||buy*1.08)),next=Math.floor(cur*(1+(Math.random()-.5)*.08));c.market=clamp(next,Math.floor(buy*1.05),Math.floor(buy*1.40))}}for(const l of Object.values(db.carListings||{})){if(l?.car){const buy=Math.max(1,Number(l.car.buy||1)),cur=Math.max(buy,Number(l.car.market||buy*1.08)),next=Math.floor(cur*(1+(Math.random()-.5)*.08));l.car.market=clamp(next,Math.floor(buy*1.05),Math.floor(buy*1.40))}}db.settings.economyMarket=clamp(db.settings.economyMarket*(1+(Math.random()-.5)*.035),.8,1.25);db.settings.marketPressure=Math.floor((db.settings.marketPressure||0)*.25);db.settings.marketNext=Date.now()+900000;io.emit('settings',db.settings);saveSoon()}
 function decayWanted(){for(const u of Object.values(db.users)){if(u.wanted>0&&Math.random()<.25)u.wanted--;if(u.vipUntil&&u.vipUntil<Date.now()){u.vip=false;u.vipUntil=0}}}
-function safeJob(label,fn){try{return fn()}catch(e){console.error(`[GAME JOB ERROR] ${label}:`,e?.stack||e);return null}}
+// Limit verbose tracing to the first 15 minutes after process start.
+const gameTraceUntil=Date.now()+15*60*1000;
+function safeJob(label,fn){
+  const start=Date.now();
+  const trace=Date.now()<gameTraceUntil&&!String(label).startsWith('maintenance/nightlife:');
+  if(trace)console.log('[GAME JOB START]',label);
+  try{return fn()}
+  catch(e){console.error(`[GAME JOB ERROR] ${label}:`,e?.stack||e);return null}
+  finally{
+    const elapsed=Date.now()-start;
+    if(trace||elapsed>750)console.log('[GAME JOB END]',label,elapsed+'ms');
+  }
+}
 // A broken NPC, game-bank loan, or one legacy player's data must not stop all scheduled work.
 setInterval(()=>{
+  if(Date.now()<gameTraceUntil)console.log('[GAME TICK BEGIN]',new Date().toISOString());
   safeJob('expireBounties',expireBounties);
   safeJob('cleanupGameBankRequests',cleanupGameBankRequests);
   const clock=safeJob('processGameClock',processGameClock);
@@ -2767,6 +2801,7 @@ setInterval(()=>{
     if(Date.now()>=u.maintenanceDue){chargeMaintenance(u);u.maintenanceDue=Date.now()+86400000}
   });
   if(clock?.changed)saveSoon();
+  if(Date.now()<gameTraceUntil)console.log('[GAME TICK END]',new Date().toISOString());
 },15000);
 setInterval(()=>safeJob('npcTick',npcTick),60000);
 setInterval(()=>{const m=process.memoryUsage(),mb=v=>Math.round(v/1048576);console.log(`[MEMORY] rss=${mb(m.rss)}MB heap=${mb(m.heapUsed)}/${mb(m.heapTotal)}MB external=${mb(m.external)}MB users=${Object.keys(db.users).length} snapshots=${db.snapshots.length}`)},60000).unref();

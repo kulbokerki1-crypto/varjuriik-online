@@ -1366,6 +1366,8 @@ const byName=name=>db.users[key(name)];
 const resolveUser=x=>byId(String(x||''))||byName(String(x||''));
 
 const app=express(),server=http.createServer(app),io=new Server(server);
+server.keepAliveTimeout = 120000;
+server.headersTimeout = 125000;
 app.use(express.json({limit:'200kb'}));
 // Mängu HTML sisaldab JS-koodi otse failis: väldi brauseri aegunud vahemälu pärast deploy'd.
 app.use((req,res,next)=>{if(req.path==='/'||req.path==='/index.html')res.set('Cache-Control','no-store, max-age=0, must-revalidate');next();});

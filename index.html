@@ -333,7 +333,7 @@ function nightPublicHtml(){const rows=(nightData.publicVenues||[]).filter(x=>x.o
 function nightVenueHtml(v){
  const h=nightHours(v),used=(v.area||0)*.75,invUsed=nightData.shop.reduce((a,it)=>a+(Number(v.inventory?.[it.id]||0)*(Number(v.itemCondition?.[it.id]??100)>0?it.m2:0)),0),free=Math.max(0,used-invUsed),staff=v.staff||[],counts={};staff.forEach(x=>counts[x.role]=(counts[x.role]||0)+1);const maxPrem=nightData.premises[nightData.premises.length-1],guests=v.guestOptions||nightData.guests[v.type]||[],ac=v.actionCosts||{promo:[0,0,0],promoHours:[2,4,8],vipBase:0,trainingLevel:0,trainingNext:0},bm=v.blackMarket||{limits:{},nextAt:Date.now()+900000};
  const alerts=(v.alerts||[]).map(a=>`<div class="notice"><div class="row"><b>🔔 ${esc(a.text||'Teavitus')}</b><button class="btn bad" onclick="nightDeleteAlert('${v.id}','${a.id||''}')">✕</button></div><div class="mut">${a.time?new Date(a.time).toLocaleString('et-EE'):''}</div></div>`).join('')+((v.alerts||[]).length?`<button class="btn bad" onclick="nightClearAlerts('${v.id}')">Kustuta kõik teated</button>`:'');
- const cDone=Number(v.constructionDoneAt||0),cRemain=Math.max(0,cDone-Date.now()),cStatus=v.constructionStatus==='building'?`🏗 Ehitus käib · valmib ${new Date(cDone).toLocaleTimeString('et-EE',{hour:'2-digit',minute:'2-digit'})} · jäänud ${Math.ceil(cRemain/60000)} min`:v.constructionStatus==='done'?'✅ Ehitus valmis':'⚠️ Ehitus tegemata';const place=`<div class="grid"><div class="notice"><b>🏢 Koht</b><div class="row"><span>Ehitus</span><b>${cStatus}</b></div><div class="row"><span>Pind</span><b>${v.area} m²</b></div><div class="row"><span>Klubi skoor</span><b>${num(v.clubScore||0)}</b></div><div class="row"><span>👥 Hetkel klubis</span><b>${v.open?`${num(v.liveVisitors||0)} · ${esc(v.liveTrend||'→ stabiilne')}`:'0 · suletud'}</b></div><div class="row"><span>Reserveeritud 25%</span><b>${(v.area*.25).toFixed(1)} m²</b></div><div class="row"><span>Sisustatav</span><b>${used.toFixed(1)} m²</b></div><div class="row"><span>Kasutuses / vaba</span><b>${invUsed.toFixed(1)} / ${free.toFixed(1)} m²</b></div><div class="row"><span>24h aken</span><b>${h.window.toFixed(1)}h jäänud</b></div><div class="row"><span>Avatud kasutatud</span><b>${h.used.toFixed(1)} / 12h</b></div></div><div class="notice"><b>🏦 Koha pangakonto</b>${v.accountOpen?`<div class="row"><span>Saldo</span><b>${fmt(v.account)}</b></div><input id="nbm_${v.id}" type="number" placeholder="Summa"><select id="nbs_${v.id}"><option value="cash">Isiklik sularaha</option><option value="bank">Isiklik pank</option></select><div class="actions"><button class="btn good" onclick="nightBankMove('${v.id}','in')">Lisa raha</button><button class="btn" onclick="nightBankMove('${v.id}','out')">Võta välja (8%)</button></div>`:`<div class="mut">Pangakonto avamata.</div><button class="btn gold" onclick="nightOpenBank('${v.id}')">Ava konto · 200⚡</button>`}</div></div><div class="notice"><b>Avamine ja pilet</b><div class="row"><span>Staatus</span><b>${v.open?'🟢 AVATUD':'⚫ SULETUD'}</b></div><input id="nef_${v.id}" type="number" min="0" value="${v.entryFee||0}" placeholder="Sissepääs"><div class="mut">Selle asukoha/taseme normaalne piletihind ~${fmt(v.normalEntryFee||0)}. Umbes 2× normaalhinnaga kukub nõudlus 0 lähedale.</div><div class="actions"><button class="btn" onclick="nightSaveFee('${v.id}')">Salvesta piletihind</button><button class="btn ${v.open?'bad':'good'}" onclick="nightToggle('${v.id}',${v.open?'false':'true'})">${v.open?'Sulge koht':'Ava koht'}</button></div><div class="mut">Deklaratsioon lukustub iga 1 tunni järel ja tuleb esitada. Uut avamisperioodi ei saa alustada enne varasemate deklaratsioonide esitamist.</div></div>`;
+ const cDone=Number(v.constructionDoneAt||0),cRemain=Math.max(0,cDone-Date.now()),cStatus=v.constructionStatus==='building'?`🏗 Ehitus käib · valmib ${new Date(cDone).toLocaleTimeString('et-EE',{hour:'2-digit',minute:'2-digit'})} · jäänud ${Math.ceil(cRemain/60000)} min`:v.constructionStatus==='done'?'✅ Ehitus valmis':'⚠️ Ehitus tegemata';const place=`<div class="grid"><div class="notice"><b>🏢 Koht</b><div class="row"><span>Ehitus</span><b>${cStatus}</b></div><div class="row"><span>Pind</span><b>${v.area} m²</b></div><div class="row"><span>Klubi skoor</span><b>${num(v.clubScore||0)}</b></div><div class="row"><span>👥 Hetkel klubis</span><b>${v.open?`${num(v.liveVisitors||0)} · ${esc(v.liveTrend||'→ stabiilne')}`:'0 · suletud'}</b></div><div class="row"><span>Reserveeritud 25%</span><b>${(v.area*.25).toFixed(1)} m²</b></div><div class="row"><span>Sisustatav</span><b>${used.toFixed(1)} m²</b></div><div class="row"><span>Kasutuses / vaba</span><b>${invUsed.toFixed(1)} / ${free.toFixed(1)} m²</b></div><div class="row"><span>24h aken</span><b>${h.window.toFixed(1)}h jäänud</b></div><div class="row"><span>Avatud kasutatud</span><b>${h.used.toFixed(1)} / 12h</b></div></div><div class="notice"><b>🏦 Koha pangakonto</b>${v.accountOpen?`<div class="row"><span>Saldo</span><b>${fmt(v.account)}</b></div><input id="nbm_${v.id}" type="number" min="1" step="1" inputmode="numeric" placeholder="Summa (€)"><select id="nbs_${v.id}"><option value="cash">Isiklik sularaha</option><option value="bank">Isiklik pank</option></select><div class="mut">Iga sisse- ja väljamakse maksab 1000 ⚡ käiku. Väljamaksel lisandub 8% tasu.</div><div class="actions"><button type="button" class="btn good" onclick="nightBankMove('${v.id}','in')">Lisa raha</button><button type="button" class="btn" onclick="nightBankMove('${v.id}','out')">Võta välja (8%)</button></div>`:`<div class="mut">Pangakonto avamata.</div><button class="btn gold" onclick="nightOpenBank('${v.id}')">Ava konto · 200⚡</button>`}</div></div><div class="notice"><b>Avamine ja pilet</b><div class="row"><span>Staatus</span><b>${v.open?'🟢 AVATUD':'⚫ SULETUD'}</b></div><input id="nef_${v.id}" type="number" min="0" value="${v.entryFee||0}" placeholder="Sissepääs"><div class="mut">Selle asukoha/taseme normaalne piletihind ~${fmt(v.normalEntryFee||0)}. Umbes 2× normaalhinnaga kukub nõudlus 0 lähedale.</div><div class="actions"><button class="btn" onclick="nightSaveFee('${v.id}')">Salvesta piletihind</button><button class="btn ${v.open?'bad':'good'}" onclick="nightToggle('${v.id}',${v.open?'false':'true'})">${v.open?'Sulge koht':'Ava koht'}</button></div><div class="mut">Deklaratsioon lukustub iga 1 tunni järel ja tuleb esitada. Uut avamisperioodi ei saa alustada enne varasemate deklaratsioonide esitamist.</div></div>`;
  const secLeftMs=Number(v.securityContract?.remainingMs??(Number(v.securityContract?.remainingHours||0)*3600000)),alcLeft=Number(v.suppliers?.alcohol?.until||0)-Date.now(),foodLeft=Number(v.suppliers?.food?.until||0)-Date.now();
  const nightWarnMs=h=>{h=Number(h||12);return (h<=1?60:h<=3?60:h<=6?90:120)*60000},nightWarnHours=h=>nightWarnMs(h)/3600000;
  const contracts=`<div class="notice"><b>⏳ Lepingud / tarnijad</b><div class="row"><span>Turva</span><b>${v.securityContract?`${esc(v.securityContract.company)} · ${nightRemainText(secLeftMs)} jäänud${secLeftMs<=nightWarnMs(v.securityContract.hours)?' · ⚠️ lõpeb varsti':''}`:'❌ puudub'}</b></div><div class="row"><span>Joogitarnija</span><b>${v.suppliers?.alcohol&&alcLeft>0?`${esc(v.suppliers.alcohol.company)} · ${nightRemainText(alcLeft)}${alcLeft<=nightWarnMs(v.suppliers.alcohol.hours)?' · ⚠️ lõpeb varsti':''}`:'❌ puudub / läbi'}</b></div><div class="row"><span>Söögitarnija</span><b>${v.suppliers?.food&&foodLeft>0?`${esc(v.suppliers.food.company)} · ${nightRemainText(foodLeft)}${foodLeft<=nightWarnMs(v.suppliers.food.hours)?' · ⚠️ lõpeb varsti':''}`:'❌ puudub / läbi'}</b></div></div>`;const tenders=`${contracts}<div class="actions">${v.constructionStatus==='none'?`<button class="btn" onclick="nightTender('${v.id}','construction')">Ehitushange</button>`:v.constructionStatus==='building'?`<button class="btn" disabled>Ehitus käib</button>`:`<button class="btn" disabled>Ehitus valmis</button>`}<button class="btn" onclick="nightTender('${v.id}','security')">Turvahange · 1–12h</button><button class="btn" onclick="nightTender('${v.id}','alcohol')">Joogihange</button><button class="btn" onclick="nightTender('${v.id}','food')">Söögihange</button></div>${nightOfferHtml(v,'construction')}${nightOfferHtml(v,'security')}${nightOfferHtml(v,'alcohol')}${nightOfferHtml(v,'food')}`;
@@ -348,17 +348,47 @@ async function loadNightlife(){try{nightData=await api('/api/nightlife');if(!nig
 async function nightCreate(){try{let j=await api('/api/nightlife/create',{method:'POST',body:JSON.stringify({name:nvName.value,type:nvType.value,premiseId:nvPrem.value})});if(j.user)me=j.user;msg(j.message);render();nightTypeView=nvType.value;loadNightlife()}catch(e){msg(e.message)}}
 async function nightOpenBank(id){try{let j=await api('/api/nightlife/bank-open',{method:'POST',body:JSON.stringify({venueId:id})});if(j.user)me=j.user;msg(j.message);render();loadNightlife()}catch(e){msg(e.message)}}
 const pendingNightBankMoves=new Map(),activeNightBankMoves=new Set();
+let nightBankMoveSequence=0;
+// crypto.randomUUID() is not supported by every mobile browser / webview.
+// Request IDs must be stable for a retry of the same transfer to prevent double charges.
+function nightBankTransactionId(){
+ const c=typeof window!=='undefined'?window.crypto:null;
+ if(c && typeof c.randomUUID==='function'){
+  try{return c.randomUUID()}catch(_e){}
+ }
+ if(c && typeof c.getRandomValues==='function'){
+  try{const bytes=new Uint8Array(16);c.getRandomValues(bytes);return 'night_'+Array.from(bytes,x=>x.toString(16).padStart(2,'0')).join('')}catch(_e){}
+ }
+ nightBankMoveSequence=(nightBankMoveSequence+1)%1000000;
+ return 'night_'+Date.now().toString(36)+'_'+nightBankMoveSequence.toString(36)+'_'+Math.random().toString(36).slice(2,13);
+}
 async function nightBankMove(id,dir){
- const amount=+document.getElementById('nbm_'+id).value||0,source=document.getElementById('nbs_'+id).value;
- const key=String(id)+'|'+dir,signature=key+'|'+amount+'|'+source;
- if(activeNightBankMoves.has(key))return; // double tap / double click
- activeNightBankMoves.add(key);
- let receipt=pendingNightBankMoves.get(key);
- if(!receipt||receipt.signature!==signature){receipt={signature,transactionId:crypto.randomUUID()};pendingNightBankMoves.set(key,receipt)}
+ const venueKey=String(id),key=venueKey+'|'+dir;
+ if(activeNightBankMoves.has(venueKey)){msg('Eelmine ülekanne on veel pooleli.');return}
+ activeNightBankMoves.add(venueKey);
  try{
+  const amountEl=document.getElementById('nbm_'+id),sourceEl=document.getElementById('nbs_'+id);
+  if(!amountEl||!sourceEl)throw Error('Koha pangakonto vaade pole valmis. Ava ööelu uuesti.');
+  const amount=Number(amountEl.value),source=String(sourceEl.value||'cash');
+  if(!Number.isSafeInteger(amount)||amount<1)throw Error('Sisesta positiivne täisarvuline summa eurodes.');
+  if(!['in','out'].includes(dir))throw Error('Vigane ülekande suund.');
+  if(dir==='in'&&!['cash','bank'].includes(source))throw Error('Vali sularaha või isiklik pank.');
+  if(me&&Number.isFinite(Number(me.turns))&&Number(me.turns)<1000)throw Error('Raha lisamiseks või väljavõtmiseks on vaja 1000 käiku.');
+  const signature=key+'|'+amount+'|'+(dir==='in'?source:'');
+  let receipt=pendingNightBankMoves.get(key);
+  if(!receipt||receipt.signature!==signature){
+   receipt={signature,transactionId:nightBankTransactionId()};
+   pendingNightBankMoves.set(key,receipt);
+  }
   const j=await api('/api/nightlife/bank-move',{method:'POST',body:JSON.stringify({venueId:id,dir,amount,source,transactionId:receipt.transactionId})});
-  pendingNightBankMoves.delete(key);if(j.user)me=j.user;msg(j.message);render();await loadNightlife();
- }catch(e){msg(e.message)}finally{activeNightBankMoves.delete(key)}
+  pendingNightBankMoves.delete(key);
+  if(j.user)me=j.user;
+  msg(j.message||'Tehing õnnestus.');
+  // Do not report a completed transfer as failed just because refreshing the UI fails.
+  try{render();await loadNightlife()}catch(_refreshError){msg('Ülekanne õnnestus, aga vaade ei uuenenud. Ava ööelu uuesti.');}
+ }catch(e){
+  msg('Ööelu konto: '+(e?.message||'tehing ebaõnnestus. Proovi uuesti.'));
+ }finally{activeNightBankMoves.delete(venueKey)}
 }
 async function nightTender(venueId,kind){try{let j=await api('/api/nightlife/tender',{method:'POST',body:JSON.stringify({venueId,kind})});if(j.user)me=j.user;msg(j.message);loadNightlife()}catch(e){msg(e.message)}}
 async function nightStaff(venueId,role){try{let j=await api('/api/nightlife/tender',{method:'POST',body:JSON.stringify({venueId,kind:'staff',role})});msg(j.message);loadNightlife()}catch(e){msg(e.message)}}
